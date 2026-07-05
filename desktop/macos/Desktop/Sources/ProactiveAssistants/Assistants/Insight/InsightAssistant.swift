@@ -406,39 +406,6 @@ actor InsightAssistant: ProactiveAssistant {
         pendingFrame = nil
     }
 
-    // MARK: - Image Processing
-
-    /// Resize and compress an image for Gemini analysis (max 1280px wide, JPEG quality 0.4)
-    private static func compressForGemini(_ data: Data) -> Data? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
-
-        let maxWidth = 1280
-        let width = cgImage.width
-        let height = cgImage.height
-        let scale = width > maxWidth ? Double(maxWidth) / Double(width) : 1.0
-        let newWidth = Int(Double(width) * scale)
-        let newHeight = Int(Double(height) * scale)
-
-        guard let context = CGContext(
-            data: nil, width: newWidth, height: newHeight,
-            bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return nil }
-
-        context.interpolationQuality = .high
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: newWidth, height: newHeight))
-
-        guard let resized = context.makeImage() else { return nil }
-
-        let mutableData = NSMutableData()
-        guard let dest = CGImageDestinationCreateWithData(mutableData as CFMutableData, "public.jpeg" as CFString, 1, nil) else { return nil }
-        CGImageDestinationAddImage(dest, resized, [kCGImageDestinationLossyCompressionQuality: 0.4] as CFDictionary)
-        guard CGImageDestinationFinalize(dest) else { return nil }
-        return mutableData as Data
-    }
-
     // MARK: - Helpers
 
     /// Get user's preferred language, cached for 1 hour
@@ -698,7 +665,7 @@ actor InsightAssistant: ProactiveAssistant {
                 }
             }
             let rawData = try await RewindStorage.shared.loadScreenshotData(for: screenshot)
-            imageData = Self.compressForGemini(rawData) ?? rawData
+            imageData = GeminiImageCompression.compress(rawData) ?? rawData
             log("Insight: P2 loaded \(imageData.count) bytes (\(rawData.count) raw) from \(screenshot.appName)")
         } catch {
             log("Insight: P2 screenshot load failed: \(error.localizedDescription)")
