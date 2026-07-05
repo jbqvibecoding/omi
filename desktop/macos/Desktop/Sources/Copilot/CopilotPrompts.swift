@@ -71,6 +71,109 @@ enum CopilotPrompts {
     }
 }
 
+// MARK: - Live Copilot (meeting/call suggestion lane)
+
+extension CopilotPrompts {
+
+    /// Gate call: cheap yes/no on whether this transcript moment deserves a suggestion.
+    /// sendTextRequest has no structured output, so the contract is a strict first line:
+    /// `SKIP` or `SPEAK <type>`. Anything unparseable is treated as SKIP.
+    static let liveGateSystemPrompt = """
+        You are the gate of a realtime meeting copilot. Given the recent transcript, decide \
+        if RIGHT NOW is a moment where a short suggestion would genuinely help the user — \
+        most moments are not.
+
+        Reply with EXACTLY one line:
+        SKIP
+        or
+        SPEAK <type>
+        where <type> is one of: objection, question, action_item, factual_gap, next_step
+
+        Say SPEAK only when: someone raised an objection or hard question directed at the \
+        user, a concrete commitment/action item was just made, a factual claim needs \
+        checking, or the conversation clearly stalls on what to do next. If a similar \
+        suggestion was already given (see list), say SKIP. When in doubt, SKIP.
+        """
+
+    static func liveGateUserPrompt(
+        transcript: String,
+        recentSuggestions: [String],
+        scenario: CopilotScenarioProfile
+    ) -> String {
+        var sections = [scenario.systemPromptBlock]
+        if !recentSuggestions.isEmpty {
+            sections.append(
+                "Suggestions already given (do not repeat):\n"
+                    + recentSuggestions.suffix(5).map { "- \($0)" }.joined(separator: "\n"))
+        }
+        sections.append("Recent transcript (most recent last):\n\(transcript)")
+        return sections.joined(separator: "\n\n")
+    }
+
+    static func liveSuggestionSystemPrompt(scenario: CopilotScenarioProfile) -> String {
+        """
+        You are an invisible realtime copilot in an ongoing conversation. Produce ONE short, \
+        immediately usable suggestion for the user based on the transcript and the screenshot \
+        (which shows shared content or the user's screen).
+
+        \(scenario.systemPromptBlock)
+
+        Rules:
+        - suggestion is under 50 words, concrete, no preamble.
+        - headline is a max-8-word label for the suggestion.
+        - talk_track (optional): the exact sentence the user could say out loud, first person.
+        - confidence 0.0-1.0: how sure you are this helps right now. Be honest — low-value \
+        suggestions with inflated confidence destroy trust.
+        - Never repeat a suggestion from the already-given list.
+        """
+    }
+
+    static func liveSuggestionUserPrompt(
+        transcript: String,
+        gateType: String,
+        recentSuggestions: [String],
+        userProfile: String?
+    ) -> String {
+        var sections: [String] = ["Trigger type: \(gateType)"]
+        if !recentSuggestions.isEmpty {
+            sections.append(
+                "Suggestions already given (do not repeat):\n"
+                    + recentSuggestions.suffix(5).map { "- \($0)" }.joined(separator: "\n"))
+        }
+        if let userProfile, !userProfile.isEmpty {
+            sections.append("What we know about the user:\n\(userProfile)")
+        }
+        sections.append("Recent transcript (most recent last):\n\(transcript)")
+        return sections.joined(separator: "\n\n")
+    }
+
+    static let liveSuggestionSchema = GeminiRequest.GenerationConfig.ResponseSchema(
+        type: "object",
+        properties: [
+            "headline": .init(type: "string", enum: nil, description: "Max 8 words labeling the suggestion"),
+            "suggestion": .init(type: "string", enum: nil, description: "The suggestion, under 50 words, concrete"),
+            "talk_track": .init(type: "string", enum: nil, description: "Optional exact sentence the user could say, first person"),
+            "confidence": .init(type: "number", enum: nil, description: "0.0-1.0 confidence this helps right now"),
+        ],
+        required: ["headline", "suggestion", "confidence"]
+    )
+}
+
+/// Parsed structured response from the live suggestion call.
+struct CopilotLiveSuggestion: Decodable {
+    let headline: String
+    let suggestion: String
+    let talkTrack: String?
+    let confidence: Double
+
+    enum CodingKeys: String, CodingKey {
+        case headline
+        case suggestion
+        case talkTrack = "talk_track"
+        case confidence
+    }
+}
+
 /// Parsed structured response from the snap call.
 struct CopilotSnapResult: Decodable {
     let intentGuess: String

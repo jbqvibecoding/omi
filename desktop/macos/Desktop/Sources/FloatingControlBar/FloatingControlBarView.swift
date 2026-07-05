@@ -820,6 +820,15 @@ struct FloatingControlBarView: View {
         )
     }
 
+    /// Width reserved under the overlaid action buttons so the text never runs beneath them.
+    private func notificationActionSpacerWidth(_ notification: FloatingBarNotification) -> CGFloat {
+        switch notification.assistantId {
+        case "task": return 90       // Execute + X
+        case "copilot": return 150   // Copy + Execute + X
+        default: return 36           // X only
+        }
+    }
+
     private func notificationView(_ notification: FloatingBarNotification) -> some View {
         // The entire card opens the chat. A SwiftUI Button only hit-tests its
         // visible content, so the previous layout left the padding and spacer
@@ -857,9 +866,10 @@ struct FloatingControlBarView: View {
                 Spacer(minLength: 0)
 
                 // Reserve space so text never runs under the overlaid action buttons.
-                // Wider for actionable (task) notifications that also show Execute.
+                // Wider for actionable notifications that also show Execute (tasks)
+                // or Copy + Execute (copilot suggestions).
                 Color.clear
-                    .frame(width: notification.assistantId == "task" ? 90 : 36, height: 18)
+                    .frame(width: notificationActionSpacerWidth(notification), height: 18)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 12)
@@ -902,6 +912,66 @@ struct FloatingControlBarView: View {
                     }
                     .buttonStyle(.plain)
                     .help("Spawn an agent to handle this")
+                }
+
+                // Copilot suggestion cards: copy the talk track (or the suggestion
+                // itself) so the user can paste it mid-conversation, or hand the
+                // suggestion to an agent to act on.
+                if notification.assistantId == "copilot" {
+                    Button {
+                        let textToCopy = notification.context?.detail ?? notification.message
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(textToCopy, forType: .string)
+                        FloatingControlBarManager.shared.dismissCurrentNotification()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 9, weight: .bold))
+                            Text("Copy")
+                                .scaledFont(size: 10, weight: .semibold)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.18))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Copy the suggestion to the clipboard")
+
+                    Button {
+                        let model = ShortcutSettings.shared.selectedModel.isEmpty
+                            ? ModelQoS.Claude.defaultSelection
+                            : ShortcutSettings.shared.selectedModel
+                        var details = notification.message
+                        if let talkTrack = notification.context?.detail, !talkTrack.isEmpty {
+                            details += "\nSuggested wording: \(talkTrack)"
+                        }
+                        let query = ProactiveTaskExecute.buildQuery(
+                            title: notification.title,
+                            message: details
+                        )
+                        _ = AgentPillsManager.shared.spawn(
+                            query: query,
+                            model: model,
+                            systemPromptSuffix: ProactiveTaskExecute.systemPromptSuffix
+                        )
+                        FloatingControlBarManager.shared.dismissCurrentNotification()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 9, weight: .bold))
+                            Text("Execute")
+                                .scaledFont(size: 10, weight: .semibold)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.18))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Spawn an agent to act on this suggestion")
                 }
 
                 Button {

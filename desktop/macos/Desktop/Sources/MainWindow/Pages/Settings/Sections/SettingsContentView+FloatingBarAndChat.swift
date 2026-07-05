@@ -32,6 +32,56 @@ extension SettingsContentView {
         }
       }
 
+      settingsCard(settingId: "floatingbar.livecopilot") {
+        VStack(alignment: .leading, spacing: 16) {
+          HStack {
+            Image(systemName: "waveform.badge.mic")
+              .scaledFont(size: 16)
+              .foregroundColor(OmiColors.textTertiary)
+
+            Text("Live Copilot")
+              .scaledFont(size: 16, weight: .semibold)
+              .foregroundColor(OmiColors.textPrimary)
+
+            Spacer()
+
+            Toggle("", isOn: $copilotLiveEnabled)
+              .toggleStyle(.switch)
+              .labelsHidden()
+              .onChange(of: copilotLiveEnabled) { _, newValue in
+                CopilotSettings.shared.isEnabled = newValue
+              }
+          }
+
+          Text(
+            "Real-time suggestions (talking points, action items, answers) in the floating bar while you're recording a meeting or call."
+          )
+          .scaledFont(size: 13)
+          .foregroundColor(OmiColors.textSecondary)
+
+          if copilotLiveEnabled {
+            HStack {
+              Text("Scenario")
+                .scaledFont(size: 14)
+                .foregroundColor(OmiColors.textPrimary)
+
+              Spacer()
+
+              Picker("", selection: $copilotScenarioId) {
+                ForEach(CopilotScenarioProfile.all) { profile in
+                  Text(profile.displayName).tag(profile.id)
+                }
+              }
+              .pickerStyle(.menu)
+              .frame(width: 200)
+              .onChange(of: copilotScenarioId) { _, newValue in
+                CopilotSettings.shared.scenarioId = newValue
+              }
+            }
+          }
+        }
+      }
+
       settingsCard(settingId: "floatingbar.background") {
         VStack(alignment: .leading, spacing: 16) {
           Text("Background Style")

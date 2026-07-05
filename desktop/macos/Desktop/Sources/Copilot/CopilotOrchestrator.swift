@@ -22,6 +22,18 @@ final class CopilotOrchestrator {
         ) { _ in
             await CopilotOrchestrator.shared.triggerSnap(source: "automation")
         }
+
+        DesktopAutomationActionRegistry.shared.register(
+            name: "copilot_live_test",
+            summary: "Feed fake transcript text into the live copilot and force one gate+generate "
+                + "evaluation (bypasses cooldowns); returns gate decision/headline/confidence.",
+            params: ["text"]
+        ) { params in
+            guard let text = params["text"], !text.isEmpty else {
+                return ["error": "missing 'text' param (fake transcript to evaluate)"]
+            }
+            return await LiveSuggestionsMonitor.shared.debugRunOnce(text: text)
+        }
     }
 
     /// Runs one snap end-to-end. Returns diagnostics for the automation bridge.

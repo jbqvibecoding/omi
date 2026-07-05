@@ -157,6 +157,10 @@ struct SettingsContentView: View {
   @State var taskBrowserKeywords: [String]
   @State var isRescoringTasks = false
 
+  // Live Copilot states
+  @State var copilotLiveEnabled: Bool
+  @State var copilotScenarioId: String
+
   // Advice Assistant states
   @State var insightEnabled: Bool
   @State var insightExtractionInterval: Double
@@ -428,6 +432,8 @@ struct SettingsContentView: View {
       initialValue: TaskAssistantSettings.shared.notificationsEnabled)
     _taskAllowedApps = State(initialValue: TaskAssistantSettings.shared.allowedApps)
     _taskBrowserKeywords = State(initialValue: TaskAssistantSettings.shared.browserKeywords)
+    _copilotLiveEnabled = State(initialValue: CopilotSettings.shared.isEnabled)
+    _copilotScenarioId = State(initialValue: CopilotSettings.shared.scenarioId)
     _insightEnabled = State(initialValue: InsightAssistantSettings.shared.isEnabled)
     _insightExtractionInterval = State(
       initialValue: InsightAssistantSettings.shared.extractionInterval)
