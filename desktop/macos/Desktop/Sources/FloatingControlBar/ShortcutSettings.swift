@@ -9,6 +9,9 @@ class ShortcutSettings: ObservableObject {
     /// Notification posted when the Ask Omi shortcut changes so hotkeys can be re-registered.
     nonisolated static let askOmiShortcutChanged = Notification.Name("ShortcutSettings.askOmiShortcutChanged")
 
+    /// Notification posted when the Copilot Snap shortcut changes so hotkeys can be re-registered.
+    nonisolated static let copilotShortcutChanged = Notification.Name("ShortcutSettings.copilotShortcutChanged")
+
     struct KeyboardShortcut: Codable, Hashable {
         var keyCode: UInt16?
         var keyDisplay: String?
@@ -278,6 +281,19 @@ class ShortcutSettings: ObservableObject {
     static let askOmiCommandJShortcut = KeyboardShortcut(keyCode: 38, keyDisplay: "J", modifiers: .command)
     static let defaultAskOmiShortcut = askOmiCommandOShortcut
 
+    // Copilot Snap presets. Default is ⌃↩ — ⌥↩ stays available as a preset, but
+    // option-based combos conflict with the default hold-⌥ push-to-talk shortcut,
+    // so it is not the default.
+    static let copilotControlReturnShortcut = KeyboardShortcut(keyCode: 36, keyDisplay: "↩", modifiers: .control)
+    static let copilotOptionReturnShortcut = KeyboardShortcut(keyCode: 36, keyDisplay: "↩", modifiers: .option)
+    static let defaultCopilotShortcut = copilotControlReturnShortcut
+
+    static let copilotPresets: [KeyboardShortcut] = [
+        copilotControlReturnShortcut,
+        askOmiCommandShiftReturnShortcut,
+        copilotOptionReturnShortcut,
+    ]
+
     static let askOmiPresets: [KeyboardShortcut] = [
         askOmiCommandOShortcut,
         askOmiCommandReturnShortcut,
@@ -309,6 +325,20 @@ class ShortcutSettings: ObservableObject {
         didSet {
             UserDefaults.standard.set(askOmiEnabled, forKey: "shortcut_askOmiEnabled")
             NotificationCenter.default.post(name: Self.askOmiShortcutChanged, object: nil)
+        }
+    }
+
+    @Published var copilotShortcut: KeyboardShortcut {
+        didSet {
+            persistShortcut(copilotShortcut, forKey: Self.copilotShortcutDefaultsKey)
+            NotificationCenter.default.post(name: Self.copilotShortcutChanged, object: nil)
+        }
+    }
+
+    @Published var copilotEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(copilotEnabled, forKey: "shortcut_copilotEnabled")
+            NotificationCenter.default.post(name: Self.copilotShortcutChanged, object: nil)
         }
     }
 
@@ -518,12 +548,17 @@ class ShortcutSettings: ObservableObject {
         !Self.askOmiPresets.contains(askOmiShortcut)
     }
 
+    var copilotUsesCustomShortcut: Bool {
+        !Self.copilotPresets.contains(copilotShortcut)
+    }
+
     var pttUsesCustomShortcut: Bool {
         !Self.pttPresets.contains(pttShortcut)
     }
 
     private static let askOmiShortcutDefaultsKey = "shortcut_askOmiKey"
     private static let pttShortcutDefaultsKey = "shortcut_pttKey"
+    private static let copilotShortcutDefaultsKey = "shortcut_copilotKey"
 
     private init() {
         self.pttShortcut = Self.loadShortcut(
@@ -536,7 +571,13 @@ class ShortcutSettings: ObservableObject {
             legacyMapper: Self.legacyAskOmiShortcut
         ) ?? Self.defaultAskOmiShortcut
 
+        self.copilotShortcut = Self.loadShortcut(
+            forKey: Self.copilotShortcutDefaultsKey,
+            legacyMapper: { _ in nil }
+        ) ?? Self.defaultCopilotShortcut
+
         self.askOmiEnabled = UserDefaults.standard.object(forKey: "shortcut_askOmiEnabled") as? Bool ?? true
+        self.copilotEnabled = UserDefaults.standard.object(forKey: "shortcut_copilotEnabled") as? Bool ?? true
         self.pttEnabled = UserDefaults.standard.object(forKey: "shortcut_pttEnabled") as? Bool ?? true
         self.doubleTapForLock = UserDefaults.standard.object(forKey: "shortcut_doubleTapForLock") as? Bool ?? true
         self.solidBackground = UserDefaults.standard.object(forKey: "shortcut_solidBackground") as? Bool ?? false

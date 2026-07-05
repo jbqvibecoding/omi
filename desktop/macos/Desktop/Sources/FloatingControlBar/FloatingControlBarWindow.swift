@@ -3216,6 +3216,57 @@ class FloatingControlBarManager {
         barWindow.resizeToResponseHeightPublic(animated: true)
     }
 
+    // MARK: - Copilot Snap
+
+    /// Show the floating bar in a thinking state for a Copilot Snap — called before
+    /// any capture/network work so the bar reacts to the keypress instantly.
+    func beginCopilotSnap() {
+        guard let window = window else { return }
+
+        // Cancel stale subscriptions so old chat data can't flash into the new surface.
+        chatCancellable?.cancel()
+        chatCancellable = nil
+        window.cancelInputHeightObserver()
+        window.state.showingAIConversation = false
+        window.state.clearVisibleConversation(cancelInFlightWork: false)
+        pendingNotificationContext = nil
+
+        // Wire typed follow-ups through the normal floating chat router. The snap
+        // answer itself is generated out-of-band (Gemini), so a follow-up starts a
+        // fresh routed query — acceptable for Phase 0.
+        if let provider = activeFloatingProvider() {
+            window.onSendQuery = { [weak self, weak window, weak provider] message in
+                guard let self = self, let window = window, let provider = provider else { return }
+                Task { @MainActor in
+                    await self.withQueryTracer(query: message, fromVoice: false) {
+                        await self.routeQuery(message, barWindow: window, provider: provider, fromVoice: false)
+                    }
+                }
+            }
+        }
+
+        if !window.isVisible {
+            window.makeKeyAndOrderFront(nil)
+        }
+        window.cancelPendingDismiss()
+        window.savePreChatCenterIfNeeded()
+        window.orderFrontRegardless()
+
+        prepareVisibleQueryState("Copilot is reading your screen…", in: window, fromVoice: false)
+    }
+
+    /// Present a pre-generated Copilot Snap answer in the floating bar's response surface.
+    func presentCopilotResponse(headline: String, markdown: String) {
+        guard let window = window else { return }
+        let text = headline.isEmpty ? markdown : "**\(headline)**\n\n\(markdown)"
+        let message = ChatMessage(text: text, sender: .ai)
+        completeVisibleAgentResponse(
+            userText: "✦ Copilot",
+            assistantMessage: message,
+            barWindow: window
+        )
+    }
+
     private func dispatchPendingQueryIfNeeded(
         barWindow: FloatingControlBarWindow,
         provider: ChatProvider

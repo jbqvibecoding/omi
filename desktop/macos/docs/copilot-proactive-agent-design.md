@@ -18,7 +18,7 @@ Chatbot 范式要求用户：(a) 意识到自己需要帮助 → (b) 切换窗�
 
 | 档位 | 名称 | 触发 | 行为 |
 |---|---|---|---|
-| 半主动 | **Copilot Snap** | 专用全局快捷键（默认 ⌥Return，可自定义） | 「就是现在，看一眼帮我」：截取关键帧 + 近 2 分钟转写 + 近期 OCR + 个人记忆，agent 预测你此刻最需要的东西并直接给出（答案/话术/解释/下一步），绝不反问 |
+| 半主动 | **Copilot Snap** | 专用全局快捷键（默认 ⌃Return，可自定义；⌥ 组合与 PTT 按住 ⌥ 冲突故不作默认） | 「就是现在，看一眼帮我」：截取关键帧 + 近 2 分钟转写 + 近期 OCR + 个人记忆，agent 预测你此刻最需要的东西并直接给出（答案/话术/解释/下一步），绝不反问 |
 | 场景激活 | **Live Copilot** | 检测到会议/通话（MeetingDetector）或手动开启 | 实时笔记 + 实时建议双车道并行：话术提示、异议处理、行动项、"你答应过…"回调 |
 | 全被动 | **Screen-Op Assist** | 录屏模式常驻低频后台分析 | 检测「卡住」信号（报错反复出现、同界面停留过久、文档来回切换），高置信才浮出操作建议 |
 
@@ -173,7 +173,7 @@ LiveSuggestionsMonitor.swift   # 会议建议车道（LiveNotesMonitor 的兄弟
 
 ### 8.1 Copilot Snap（快捷键关键帧）
 
-1. **快捷键注册**：`ShortcutSettings.swift` 加 `copilotShortcut`（默认 ⌥Return = keyCode 36 + optionKey，模式照抄 `askOmiShortcut` 的持久化/变更通知/预设）；`GlobalShortcutManager.swift` 加 `HotKeyID.copilot = 3` + `registerCopilot()`，`handleHotKeyEvent` 派发 `CopilotOrchestrator.shared.triggerPredictiveResponse(source: .hotkey)`。
+1. **快捷键注册**：`ShortcutSettings.swift` 加 `copilotShortcut`（默认 ⌃Return = keyCode 36 + control——⌥ 组合与 PTT 默认"按住 ⌥"冲突，⌥Return 仅作可选预设；模式照抄 `askOmiShortcut` 的持久化/变更通知/预设）；`GlobalShortcutManager.swift` 加 `HotKeyID.copilot = 3` + `registerCopilot()`，`handleHotKeyEvent` 派发 `CopilotOrchestrator.shared.triggerPredictiveResponse(source: .hotkey)`。
 2. **即时反馈**：任何网络请求之前，悬浮条 <100ms 内弹 "Reading your screen…" 思考态（复用 `routeQuery` 的 shimmer）。感知即时性是"魔法"与"坏了"的分界线。
 3. **并行组装**：`captureScreenJPEG()` 降采样至 ~100-200KB ∥ `CopilotContextEngine.snapshot(transcriptSeconds: 120, includeKeyframe: true, maxOCRChars: 4000)`。
 4. **一次结构化 vision 调用**（Gemini Flash，`thinkingBudget: 0`）。预测性 prompt 核心：

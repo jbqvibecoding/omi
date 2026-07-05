@@ -14,9 +14,11 @@ class GlobalShortcutManager {
 
     private enum HotKeyID: UInt32 {
         case askOmi = 2
+        case copilot = 3
     }
 
     private var shortcutObserver: NSObjectProtocol?
+    private var copilotShortcutObserver: NSObjectProtocol?
 
     private init() {
         var eventType = EventTypeSpec(
@@ -39,6 +41,15 @@ class GlobalShortcutManager {
         ) { [weak self] _ in
             self?.registerAskOmi()
         }
+
+        // Re-register Copilot Snap shortcut when user changes it in settings
+        copilotShortcutObserver = NotificationCenter.default.addObserver(
+            forName: ShortcutSettings.copilotShortcutChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.registerCopilot()
+        }
     }
 
     func registerShortcuts() {
@@ -46,6 +57,8 @@ class GlobalShortcutManager {
         guard !isRegistrationSuspended else { return }
         // Register Ask Omi shortcut from user settings
         registerAskOmi()
+        // Register Copilot Snap shortcut from user settings
+        registerCopilot()
     }
 
     func setRegistrationSuspended(_ suspended: Bool) {
@@ -76,6 +89,27 @@ class GlobalShortcutManager {
         }
         registerHotKey(keyCode: Int(keyCode), modifiers: askOmiShortcut.carbonModifiers, id: .askOmi)
         NSLog("GlobalShortcutManager: Registered Ask Omi shortcut: \(askOmiShortcut.displayLabel)")
+    }
+
+    private func registerCopilot() {
+        guard !isRegistrationSuspended else { return }
+        // Unregister previous Copilot hotkey if any
+        if let ref = hotKeyRefs.removeValue(forKey: .copilot) {
+            UnregisterEventHotKey(ref)
+        }
+        let (copilotEnabled, copilotShortcut) = MainActor.assumeIsolated {
+            (ShortcutSettings.shared.copilotEnabled, ShortcutSettings.shared.copilotShortcut)
+        }
+        guard copilotEnabled else {
+            NSLog("GlobalShortcutManager: Copilot Snap shortcut is disabled")
+            return
+        }
+        guard copilotShortcut.supportsGlobalHotKey, let keyCode = copilotShortcut.keyCode else {
+            NSLog("GlobalShortcutManager: Copilot Snap shortcut is not a registerable hotkey")
+            return
+        }
+        registerHotKey(keyCode: Int(keyCode), modifiers: copilotShortcut.carbonModifiers, id: .copilot)
+        NSLog("GlobalShortcutManager: Registered Copilot Snap shortcut: \(copilotShortcut.displayLabel)")
     }
 
     private func registerHotKey(keyCode: Int, modifiers: Int, id: HotKeyID) {
@@ -115,6 +149,13 @@ class GlobalShortcutManager {
             NSLog("GlobalShortcutManager: Ask Omi shortcut detected")
             DispatchQueue.main.async {
                 FloatingControlBarManager.shared.toggleAIInput()
+            }
+        case .copilot:
+            NSLog("GlobalShortcutManager: Copilot Snap shortcut detected")
+            DispatchQueue.main.async {
+                Task { @MainActor in
+                    await CopilotOrchestrator.shared.triggerSnap(source: "hotkey")
+                }
             }
         }
 
