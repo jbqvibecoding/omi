@@ -11,6 +11,12 @@ final class CopilotOrchestrator {
     private var isRunning = false
     private var geminiClient: GeminiClient?
 
+    // Hot mode: a second shortcut press within this window upgrades the snap
+    // into a live voice session over the realtime hub.
+    private let hotModeWindow: TimeInterval = 3
+    private var lastSnapTriggeredAt: Date?
+    private var lastSnapResult: CopilotSnapResult?
+
     private init() {}
 
     /// Registers the omi-ctl debug action. Called once at app startup.
@@ -34,11 +40,40 @@ final class CopilotOrchestrator {
             }
             return await LiveSuggestionsMonitor.shared.debugRunOnce(text: text)
         }
+
+        DesktopAutomationActionRegistry.shared.register(
+            name: "copilot_hot_mode",
+            summary: "Toggle Copilot hot mode: starts a live voice session over the realtime hub "
+                + "(as if double-pressing the copilot shortcut), or ends it if one is active."
+        ) { _ in
+            if await PushToTalkManager.shared.state == .lockedListening {
+                await PushToTalkManager.shared.finalizeVoiceSession()
+                return ["hot_mode": "ended"]
+            }
+            return await CopilotOrchestrator.shared.upgradeToHotMode(source: "automation")
+        }
     }
 
     /// Runs one snap end-to-end. Returns diagnostics for the automation bridge.
+    ///
+    /// The copilot shortcut is a three-stage control:
+    /// 1st press → snap (screenshot + predictive answer card),
+    /// 2nd press within 3s → hot mode (live voice session over the realtime hub),
+    /// press during hot mode → end the voice session.
     @discardableResult
     func triggerSnap(source: String) async -> [String: String]? {
+        // Hot-mode checks come before the in-flight guard so a double-press
+        // upgrades even while the snap request is still running.
+        if PushToTalkManager.shared.state == .lockedListening {
+            PushToTalkManager.shared.finalizeVoiceSession()
+            return ["hot_mode": "ended"]
+        }
+        if let last = lastSnapTriggeredAt, Date().timeIntervalSince(last) < hotModeWindow {
+            lastSnapTriggeredAt = nil
+            return upgradeToHotMode(source: source)
+        }
+        lastSnapTriggeredAt = Date()
+
         guard !isRunning else {
             log("CopilotOrchestrator: snap already running, ignoring trigger (\(source))")
             return ["error": "snap already running"]
@@ -75,6 +110,7 @@ final class CopilotOrchestrator {
             )
             let result = try JSONDecoder().decode(CopilotSnapResult.self, from: Data(responseText.utf8))
 
+            lastSnapResult = result
             FloatingControlBarManager.shared.presentCopilotResponse(
                 headline: result.headline,
                 markdown: result.responseMarkdown
@@ -103,6 +139,35 @@ final class CopilotOrchestrator {
             presentFailure("Copilot couldn't analyze the screen right now. Try again in a moment.")
             return ["error": error.localizedDescription]
         }
+    }
+
+    // MARK: - Hot Mode
+
+    /// Upgrade to a live voice session over the realtime hub: continuous mic capture,
+    /// spoken replies, and a fresh screen frame injected automatically at the start of
+    /// every turn (RealtimeHubController.beginTurn). The last snap's question/answer is
+    /// seeded as voice-continuity context so the model knows what was just discussed.
+    private func upgradeToHotMode(source: String) -> [String: String] {
+        if let snap = lastSnapResult {
+            RealtimeHubController.shared.seedVoiceContinuity(
+                userText: "[Copilot Snap] \(snap.intentGuess)",
+                assistantText: "**\(snap.headline)**\n\(snap.responseMarkdown)"
+            )
+        }
+        let started = PushToTalkManager.shared.startLockedVoiceSession()
+        if started {
+            log("CopilotOrchestrator: hot mode started (\(source))")
+            PostHogManager.shared.track(
+                "copilot_hot_mode_started",
+                properties: [
+                    "source": source,
+                    "had_snap_context": lastSnapResult != nil,
+                ]
+            )
+            return ["hot_mode": "started"]
+        }
+        log("CopilotOrchestrator: hot mode refused — PTT busy (state=\(PushToTalkManager.shared.state))")
+        return ["hot_mode": "refused", "ptt_state": String(describing: PushToTalkManager.shared.state)]
     }
 
     // MARK: - Helpers
