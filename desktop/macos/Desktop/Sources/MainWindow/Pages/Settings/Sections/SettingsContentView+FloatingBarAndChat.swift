@@ -79,6 +79,29 @@ extension SettingsContentView {
               }
             }
           }
+
+          Divider()
+            .background(OmiColors.backgroundQuaternary)
+
+          HStack {
+            VStack(alignment: .leading, spacing: 2) {
+              Text("Screen help while you work")
+                .scaledFont(size: 14)
+                .foregroundColor(OmiColors.textPrimary)
+              Text("Suggests a fix when you look stuck (repeating errors, no progress)")
+                .scaledFont(size: 12)
+                .foregroundColor(OmiColors.textTertiary)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: $screenOpEnabled)
+              .toggleStyle(.switch)
+              .labelsHidden()
+              .onChange(of: screenOpEnabled) { _, newValue in
+                ScreenOpAssistantSettings.shared.isEnabled = newValue
+              }
+          }
         }
       }
 

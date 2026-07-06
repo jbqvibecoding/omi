@@ -160,6 +160,7 @@ struct SettingsContentView: View {
   // Live Copilot states
   @State var copilotLiveEnabled: Bool
   @State var copilotScenarioId: String
+  @State var screenOpEnabled: Bool
 
   // Advice Assistant states
   @State var insightEnabled: Bool
@@ -434,6 +435,7 @@ struct SettingsContentView: View {
     _taskBrowserKeywords = State(initialValue: TaskAssistantSettings.shared.browserKeywords)
     _copilotLiveEnabled = State(initialValue: CopilotSettings.shared.isEnabled)
     _copilotScenarioId = State(initialValue: CopilotSettings.shared.scenarioId)
+    _screenOpEnabled = State(initialValue: ScreenOpAssistantSettings.shared.isEnabled)
     _insightEnabled = State(initialValue: InsightAssistantSettings.shared.isEnabled)
     _insightExtractionInterval = State(
       initialValue: InsightAssistantSettings.shared.extractionInterval)

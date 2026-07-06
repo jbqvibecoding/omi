@@ -944,8 +944,8 @@ struct FloatingControlBarView: View {
                             ? ModelQoS.Claude.defaultSelection
                             : ShortcutSettings.shared.selectedModel
                         var details = notification.message
-                        if let talkTrack = notification.context?.detail, !talkTrack.isEmpty {
-                            details += "\nSuggested wording: \(talkTrack)"
+                        if let detail = notification.context?.detail, !detail.isEmpty {
+                            details += "\nDetails: \(detail)"
                         }
                         let query = ProactiveTaskExecute.buildQuery(
                             title: notification.title,

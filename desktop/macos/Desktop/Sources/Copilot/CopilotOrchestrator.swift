@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// Entry point for "Copilot Snap": the user presses the copilot shortcut, we capture
@@ -51,6 +52,42 @@ final class CopilotOrchestrator {
                 return ["hot_mode": "ended"]
             }
             return await CopilotOrchestrator.shared.upgradeToHotMode(source: "automation")
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
+            name: "screen_op_test",
+            summary: "Run one Screen-Op analysis on the frontmost app (bypasses the interval); "
+                + "returns headline/confidence/sql_count or no_suggestion. Requires monitoring to be on.",
+            params: ["app"]
+        ) { params in
+            guard let assistant = await ProactiveAssistantsPlugin.shared.currentScreenOpAssistant else {
+                return ["error": "screen-op assistant not running (is screen monitoring on?)"]
+            }
+            let appName = await MainActor.run {
+                params["app"] ?? NSWorkspace.shared.frontmostApplication?.localizedName ?? "Unknown"
+            }
+            do {
+                let (result, sqlCount) = try await assistant.testAnalyze(appName: appName, windowTitle: nil)
+                guard let result else {
+                    return ["result": "no_result", "sql_count": String(sqlCount)]
+                }
+                guard result.hasSuggestion, let suggestion = result.suggestion else {
+                    return [
+                        "result": "no_suggestion",
+                        "activity": result.currentActivity,
+                        "sql_count": String(sqlCount),
+                    ]
+                }
+                return [
+                    "headline": suggestion.headline ?? "",
+                    "suggestion": suggestion.suggestion,
+                    "confidence": String(format: "%.2f", suggestion.confidence),
+                    "action_prompt": suggestion.actionPrompt ?? "",
+                    "sql_count": String(sqlCount),
+                ]
+            } catch {
+                return ["error": error.localizedDescription]
+            }
         }
     }
 
