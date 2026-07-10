@@ -9,6 +9,7 @@ class CopilotSettings {
 
     private let enabledKey = "copilotLiveEnabled"
     private let scenarioIdKey = "copilotLiveScenarioId"
+    private let examUnlockedKey = "copilotLiveExamUnlocked"
     private let minConfidenceKey = "copilotLiveMinConfidence"
     private let suggestionCooldownKey = "copilotLiveSuggestionCooldown"
     private let maxPerSessionKey = "copilotLiveMaxSuggestionsPerSession"
@@ -53,6 +54,21 @@ class CopilotSettings {
 
     var scenario: CopilotScenarioProfile {
         CopilotScenarioProfile.byId(scenarioId)
+    }
+
+    /// Whether the ethically-sensitive exam/study profile is unlocked. Off by default;
+    /// the user must explicitly enable it (with an ethics note) in Settings.
+    var examProfileUnlocked: Bool {
+        get { UserDefaults.standard.bool(forKey: examUnlockedKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: examUnlockedKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Profiles to show in the picker (includes exam only when unlocked).
+    var availableScenarios: [CopilotScenarioProfile] {
+        examProfileUnlocked ? CopilotScenarioProfile.allIncludingGated : CopilotScenarioProfile.all
     }
 
     /// Minimum confidence for showing a live suggestion

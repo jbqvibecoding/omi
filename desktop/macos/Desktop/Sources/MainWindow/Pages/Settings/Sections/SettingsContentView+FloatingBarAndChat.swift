@@ -68,7 +68,7 @@ extension SettingsContentView {
               Spacer()
 
               Picker("", selection: $copilotScenarioId) {
-                ForEach(CopilotScenarioProfile.all) { profile in
+                ForEach(CopilotSettings.shared.availableScenarios) { profile in
                   Text(profile.displayName).tag(profile.id)
                 }
               }

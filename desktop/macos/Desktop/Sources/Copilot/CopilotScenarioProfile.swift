@@ -32,7 +32,14 @@ struct CopilotScenarioProfile: Identifiable, Equatable {
             Scenario: the user is selling on this call. High-value suggestions are: a concise \
             response to an objection the prospect just raised (price, competitor, timing, trust), \
             a talking point that advances the deal, or the concrete next step to propose. \
-            When you provide talk_track, write it in the first person, ready to say out loud.
+            When you provide talk_track, write it in the first person, ready to say out loud — \
+            persuasive but not pushy, anchored on value.
+
+            Examples of the talk_track quality bar:
+            - Prospect: "I need to think about it" → "I completely understand — what specific \
+            concern can I address right now, timeline, cost, or integration?"
+            - Prospect: "What makes you different?" → name 2-3 concrete differentiators with \
+            numbers, then ask which matters most to them.
             """,
         triggerVocabulary: [
             "price", "pricing", "cost", "expensive", "budget", "competitor", "alternative",
@@ -63,9 +70,53 @@ struct CopilotScenarioProfile: Identifiable, Equatable {
         triggerVocabulary: ["not working", "error", "broken", "issue", "problem", "refund", "cancel", "bug"]
     )
 
-    static let all: [CopilotScenarioProfile] = [meeting, sales, interview, support]
+    static let negotiation = CopilotScenarioProfile(
+        id: "negotiation",
+        displayName: "Negotiation",
+        systemPromptBlock: """
+            Scenario: a business negotiation or deal discussion. High-value suggestions are: a \
+            strategic response to a demand or pushback, a way to reframe toward a win-win, or a \
+            concession structured to protect the user's position. When you provide talk_track, \
+            write the exact words to say — calm, strategic, addressing the underlying concern \
+            rather than just the stated position.
+
+            Examples of the talk_track quality bar:
+            - Other party: "That price is too high" → reframe on value/ROI, then offer a \
+            structural alternative (payment terms, phased scope) rather than just discounting.
+            - Other party: "We're considering other options" → acknowledge it, then surface the \
+            2-3 differentiators that matter for their decision and ask how they weigh them.
+            """,
+        triggerVocabulary: [
+            "too high", "too expensive", "better deal", "other options", "walk away", "final offer",
+            "terms", "counteroffer", "concession", "budget", "margin",
+        ]
+    )
+
+    /// Exam/certification assistance. Ethically sensitive (see CopilotSettings.examProfileUnlocked)
+    /// — positioned for study and review, not covert test-taking. Locked by default and excluded
+    /// from `all` unless the user explicitly unlocks it in Settings.
+    static let exam = CopilotScenarioProfile(
+        id: "exam",
+        displayName: "Study / review",
+        systemPromptBlock: """
+            Scenario: the user is studying or reviewing practice material. When a question appears, \
+            give the direct answer first, then a brief justification so the user understands why — \
+            the goal is learning, not just the answer. Keep it short and accurate. Include the \
+            question, the correct answer, and one-line reasoning.
+            """,
+        triggerVocabulary: [
+            "which of the following", "true or false", "select the", "what is the", "define",
+            "explain why", "answer",
+        ]
+    )
+
+    /// Profiles always available in the picker.
+    static let all: [CopilotScenarioProfile] = [meeting, sales, interview, support, negotiation]
+
+    /// All profiles including the gated exam profile (used when it is unlocked).
+    static let allIncludingGated: [CopilotScenarioProfile] = all + [exam]
 
     static func byId(_ id: String) -> CopilotScenarioProfile {
-        all.first { $0.id == id } ?? .meeting
+        allIncludingGated.first { $0.id == id } ?? .meeting
     }
 }
