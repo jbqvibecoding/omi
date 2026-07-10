@@ -102,6 +102,29 @@ extension SettingsContentView {
                 ScreenOpAssistantSettings.shared.isEnabled = newValue
               }
           }
+
+          Divider()
+            .background(OmiColors.backgroundQuaternary)
+
+          HStack {
+            VStack(alignment: .leading, spacing: 2) {
+              Text("Hide from screen recordings & shares")
+                .scaledFont(size: 14)
+                .foregroundColor(OmiColors.textPrimary)
+              Text("The copilot stays visible to you but never appears on a shared screen or recording")
+                .scaledFont(size: 12)
+                .foregroundColor(OmiColors.textTertiary)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: $stealthModeEnabled)
+              .toggleStyle(.switch)
+              .labelsHidden()
+              .onChange(of: stealthModeEnabled) { _, newValue in
+                ShortcutSettings.shared.stealthModeEnabled = newValue
+              }
+          }
         }
       }
 

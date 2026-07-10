@@ -15,10 +15,12 @@ class GlobalShortcutManager {
     private enum HotKeyID: UInt32 {
         case askOmi = 2
         case copilot = 3
+        case clickThrough = 4
     }
 
     private var shortcutObserver: NSObjectProtocol?
     private var copilotShortcutObserver: NSObjectProtocol?
+    private var clickThroughShortcutObserver: NSObjectProtocol?
 
     private init() {
         var eventType = EventTypeSpec(
@@ -50,6 +52,15 @@ class GlobalShortcutManager {
         ) { [weak self] _ in
             self?.registerCopilot()
         }
+
+        // Re-register click-through shortcut when user changes it in settings
+        clickThroughShortcutObserver = NotificationCenter.default.addObserver(
+            forName: ShortcutSettings.clickThroughShortcutChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.registerClickThrough()
+        }
     }
 
     func registerShortcuts() {
@@ -59,6 +70,8 @@ class GlobalShortcutManager {
         registerAskOmi()
         // Register Copilot Snap shortcut from user settings
         registerCopilot()
+        // Register click-through toggle shortcut from user settings
+        registerClickThrough()
     }
 
     func setRegistrationSuspended(_ suspended: Bool) {
@@ -112,6 +125,26 @@ class GlobalShortcutManager {
         NSLog("GlobalShortcutManager: Registered Copilot Snap shortcut: \(copilotShortcut.displayLabel)")
     }
 
+    private func registerClickThrough() {
+        guard !isRegistrationSuspended else { return }
+        if let ref = hotKeyRefs.removeValue(forKey: .clickThrough) {
+            UnregisterEventHotKey(ref)
+        }
+        let (enabled, shortcut) = MainActor.assumeIsolated {
+            (ShortcutSettings.shared.clickThroughEnabled, ShortcutSettings.shared.clickThroughShortcut)
+        }
+        guard enabled else {
+            NSLog("GlobalShortcutManager: Click-through shortcut is disabled")
+            return
+        }
+        guard shortcut.supportsGlobalHotKey, let keyCode = shortcut.keyCode else {
+            NSLog("GlobalShortcutManager: Click-through shortcut is not a registerable hotkey")
+            return
+        }
+        registerHotKey(keyCode: Int(keyCode), modifiers: shortcut.carbonModifiers, id: .clickThrough)
+        NSLog("GlobalShortcutManager: Registered click-through shortcut: \(shortcut.displayLabel)")
+    }
+
     private func registerHotKey(keyCode: Int, modifiers: Int, id: HotKeyID) {
         var hotKeyRef: EventHotKeyRef?
         let hotKeyID = EventHotKeyID(signature: FourCharCode(0x4F4D4921), id: id.rawValue) // "OMI!"
@@ -156,6 +189,11 @@ class GlobalShortcutManager {
                 Task { @MainActor in
                     await CopilotOrchestrator.shared.triggerSnap(source: "hotkey")
                 }
+            }
+        case .clickThrough:
+            NSLog("GlobalShortcutManager: Click-through shortcut detected")
+            DispatchQueue.main.async {
+                FloatingControlBarManager.shared.toggleClickThrough()
             }
         }
 

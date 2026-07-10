@@ -322,6 +322,10 @@ class FloatingControlBarWindow: NSPanel, NSWindowDelegate {
             ? .statusBar
             : .floating
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        // Stealth: exclude the copilot HUD from screen recordings / shares when enabled
+        // (the "invisible copilot" property). Applied here at init and refreshed when
+        // the setting changes via FloatingControlBarManager.
+        StealthWindowController.applyCurrentStealthPreference(to: self)
         self.isMovableByWindowBackground = false
         self.acceptsMouseMovedEvents = true
         self.delegate = self
@@ -2201,7 +2205,33 @@ class FloatingControlBarManager {
         snoozeTimer = timer
     }
 
-    private init() {}
+    private init() {
+        stealthObserver = NotificationCenter.default.addObserver(
+            forName: ShortcutSettings.stealthModeChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refreshStealthMode() }
+        }
+    }
+
+    private var stealthObserver: NSObjectProtocol?
+
+    /// Re-apply content protection to the HUD when the stealth setting changes.
+    func refreshStealthMode() {
+        guard let window else { return }
+        StealthWindowController.applyCurrentStealthPreference(to: window)
+    }
+
+    /// Toggle click-through on the HUD (mouse events pass through to the app beneath).
+    /// Returns the new state. Bound to the click-through shortcut.
+    @discardableResult
+    func toggleClickThrough() -> Bool {
+        guard let window else { return false }
+        let newValue = !window.ignoresMouseEvents
+        StealthWindowController.applyClickThrough(window, enabled: newValue)
+        // Briefly flash the ambient glow so the user gets feedback on the (invisible) toggle.
+        OverlayService.shared.showGlowAroundActiveWindow(colorMode: newValue ? .distracted : .focused)
+        return newValue
+    }
 
     /// Create the floating bar window and wire up AppState bindings.
     func setup(appState: AppState, chatProvider: ChatProvider) {

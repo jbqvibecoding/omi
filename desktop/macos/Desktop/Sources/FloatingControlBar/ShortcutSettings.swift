@@ -12,6 +12,12 @@ class ShortcutSettings: ObservableObject {
     /// Notification posted when the Copilot Snap shortcut changes so hotkeys can be re-registered.
     nonisolated static let copilotShortcutChanged = Notification.Name("ShortcutSettings.copilotShortcutChanged")
 
+    /// Notification posted when the click-through shortcut changes so hotkeys can be re-registered.
+    nonisolated static let clickThroughShortcutChanged = Notification.Name("ShortcutSettings.clickThroughShortcutChanged")
+
+    /// Notification posted when stealth mode is toggled so windows can refresh content protection.
+    nonisolated static let stealthModeChanged = Notification.Name("ShortcutSettings.stealthModeChanged")
+
     struct KeyboardShortcut: Codable, Hashable {
         var keyCode: UInt16?
         var keyDisplay: String?
@@ -294,6 +300,10 @@ class ShortcutSettings: ObservableObject {
         copilotOptionReturnShortcut,
     ]
 
+    // Click-through toggle (default ⌘M, matching cheating-daddy/glass Cmd+M convention).
+    static let clickThroughCommandMShortcut = KeyboardShortcut(keyCode: 46, keyDisplay: "M", modifiers: .command)
+    static let defaultClickThroughShortcut = clickThroughCommandMShortcut
+
     static let askOmiPresets: [KeyboardShortcut] = [
         askOmiCommandOShortcut,
         askOmiCommandReturnShortcut,
@@ -339,6 +349,29 @@ class ShortcutSettings: ObservableObject {
         didSet {
             UserDefaults.standard.set(copilotEnabled, forKey: "shortcut_copilotEnabled")
             NotificationCenter.default.post(name: Self.copilotShortcutChanged, object: nil)
+        }
+    }
+
+    /// When true, the copilot HUD is hidden from screen recordings, screenshots, and
+    /// screen sharing (NSWindow.sharingType = .none) — the "invisible copilot" property.
+    @Published var stealthModeEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(stealthModeEnabled, forKey: "shortcut_stealthModeEnabled")
+            NotificationCenter.default.post(name: Self.stealthModeChanged, object: nil)
+        }
+    }
+
+    @Published var clickThroughShortcut: KeyboardShortcut {
+        didSet {
+            persistShortcut(clickThroughShortcut, forKey: Self.clickThroughShortcutDefaultsKey)
+            NotificationCenter.default.post(name: Self.clickThroughShortcutChanged, object: nil)
+        }
+    }
+
+    @Published var clickThroughEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(clickThroughEnabled, forKey: "shortcut_clickThroughEnabled")
+            NotificationCenter.default.post(name: Self.clickThroughShortcutChanged, object: nil)
         }
     }
 
@@ -559,6 +592,7 @@ class ShortcutSettings: ObservableObject {
     private static let askOmiShortcutDefaultsKey = "shortcut_askOmiKey"
     private static let pttShortcutDefaultsKey = "shortcut_pttKey"
     private static let copilotShortcutDefaultsKey = "shortcut_copilotKey"
+    private static let clickThroughShortcutDefaultsKey = "shortcut_clickThroughKey"
 
     private init() {
         self.pttShortcut = Self.loadShortcut(
@@ -576,8 +610,15 @@ class ShortcutSettings: ObservableObject {
             legacyMapper: { _ in nil }
         ) ?? Self.defaultCopilotShortcut
 
+        self.clickThroughShortcut = Self.loadShortcut(
+            forKey: Self.clickThroughShortcutDefaultsKey,
+            legacyMapper: { _ in nil }
+        ) ?? Self.defaultClickThroughShortcut
+
         self.askOmiEnabled = UserDefaults.standard.object(forKey: "shortcut_askOmiEnabled") as? Bool ?? true
         self.copilotEnabled = UserDefaults.standard.object(forKey: "shortcut_copilotEnabled") as? Bool ?? true
+        self.stealthModeEnabled = UserDefaults.standard.object(forKey: "shortcut_stealthModeEnabled") as? Bool ?? true
+        self.clickThroughEnabled = UserDefaults.standard.object(forKey: "shortcut_clickThroughEnabled") as? Bool ?? true
         self.pttEnabled = UserDefaults.standard.object(forKey: "shortcut_pttEnabled") as? Bool ?? true
         self.doubleTapForLock = UserDefaults.standard.object(forKey: "shortcut_doubleTapForLock") as? Bool ?? true
         self.solidBackground = UserDefaults.standard.object(forKey: "shortcut_solidBackground") as? Bool ?? false
