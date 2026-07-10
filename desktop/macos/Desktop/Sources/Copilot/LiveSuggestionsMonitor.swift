@@ -304,7 +304,7 @@ final class LiveSuggestionsMonitor: ObservableObject {
         let parts = firstLine.split(separator: " ", maxSplits: 1)
         guard parts.count == 2 else { return nil }
         let type = parts[1].trimmingCharacters(in: .whitespaces).lowercased()
-        let allowed = ["objection", "question", "action_item", "factual_gap", "next_step"]
+        let allowed = ["objection", "question", "action_item", "factual_gap", "next_step", "term_definition"]
         return allowed.contains(type) ? type : nil
     }
 

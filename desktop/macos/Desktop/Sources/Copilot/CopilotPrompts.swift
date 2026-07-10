@@ -87,12 +87,24 @@ extension CopilotPrompts {
         SKIP
         or
         SPEAK <type>
-        where <type> is one of: objection, question, action_item, factual_gap, next_step
+        where <type> is one of: objection, question, action_item, factual_gap, next_step, term_definition
 
-        Say SPEAK only when: someone raised an objection or hard question directed at the \
-        user, a concrete commitment/action item was just made, a factual claim needs \
-        checking, or the conversation clearly stalls on what to do next. If a similar \
-        suggestion was already given (see list), say SKIP. When in doubt, SKIP.
+        INTENT OVER PUNCTUATION: real transcripts have errors, garbled speech, and incomplete \
+        sentences. Judge INTENT, not question marks. Treat these as questions to the user:
+        - Incomplete: "so the performance...", "and scaling wise...", "what about..."
+        - Implied: "I'm curious about X", "walk me through Y", "tell me about Z"
+        - Transcription errors: "can u", "how you", "whats your"
+        If you're 50%+ confident someone is asking the user something at the END of the \
+        transcript, SPEAK question.
+
+        Priority order when deciding:
+        1. A question/objection directed at the user at the end of the transcript → SPEAK
+        2. A proper noun (company, product, technical term) the user may need context on, \
+           appearing in the LAST 10-15 words → SPEAK term_definition
+        3. A concrete commitment/action item just made, a factual claim needing a check, or \
+           the conversation stalling on next steps → SPEAK the matching type
+
+        Say SKIP if a similar suggestion was already given (see list), or when in doubt.
         """
 
     static func liveGateUserPrompt(
@@ -118,9 +130,14 @@ extension CopilotPrompts {
 
         \(scenario.systemPromptBlock)
 
-        Rules:
-        - suggestion is under 50 words, concrete, no preamble.
-        - headline is a max-8-word label for the suggestion.
+        If the trigger type is term_definition: the user likely needs quick context on a \
+        proper noun (company, product, technical term) that just came up. Define it in one \
+        tight line plus 1-2 supporting facts — no talk_track needed for a definition.
+
+        Response structure discipline (borrowed from strong live-copilot practice):
+        - headline: the actual answer/label in ≤6 words, not a topic name.
+        - suggestion: lead with the direct answer, then supporting detail. Under 50 words, \
+        concrete, no preamble.
         - talk_track (optional): the exact sentence the user could say out loud, first person.
         - confidence 0.0-1.0: how sure you are this helps right now. Be honest — low-value \
         suggestions with inflated confidence destroy trust.
