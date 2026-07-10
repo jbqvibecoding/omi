@@ -55,6 +55,14 @@ final class CopilotOrchestrator {
         }
 
         DesktopAutomationActionRegistry.shared.register(
+            name: "copilot_summary_test",
+            summary: "Force-generate the structured session summary from the current/last transcript; "
+                + "returns overview + key-point/action counts."
+        ) { _ in
+            await SessionSummaryMonitor.shared.debugGenerate()
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
             name: "screen_op_test",
             summary: "Run one Screen-Op analysis on the frontmost app (bypasses the interval); "
                 + "returns headline/confidence/sql_count or no_suggestion. Requires monitoring to be on.",

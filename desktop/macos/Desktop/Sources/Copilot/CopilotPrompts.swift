@@ -174,6 +174,86 @@ extension CopilotPrompts {
         ],
         required: ["headline", "suggestion", "confidence"]
     )
+
+    // MARK: - Structured session summary (ported from glass summaryService)
+
+    static let sessionSummarySystemPrompt = """
+        You maintain a live, structured summary of an ongoing conversation. Each time you are \
+        called, update the summary to reflect everything discussed so far, building on the \
+        previous summary if one is provided. Be concise and factual — this is a running record \
+        the user glances at, not prose.
+        """
+
+    static func sessionSummaryUserPrompt(transcript: String, previousSummary: CopilotSessionSummary?) -> String {
+        var sections: [String] = []
+        if let previousSummary {
+            sections.append(
+                "Previous summary to build upon:\nOverview: \(previousSummary.overview)\n"
+                    + "Topics: \(previousSummary.keyPoints.joined(separator: "; "))\n"
+                    + "Actions: \(previousSummary.actionItems.joined(separator: "; "))")
+        }
+        sections.append("Full conversation transcript (most recent last):\n\(transcript)")
+        sections.append(
+            "Produce the updated structured summary: a one-line overview, the key points/topics, "
+                + "concrete action items with owners where stated, and 2-3 suggested follow-up questions.")
+        return sections.joined(separator: "\n\n")
+    }
+
+    static let sessionSummarySchema = GeminiRequest.GenerationConfig.ResponseSchema(
+        type: "object",
+        properties: [
+            "overview": .init(type: "string", enum: nil, description: "One-line overview of the conversation so far"),
+            "key_points": .init(
+                type: "array", enum: nil, description: "Key discussion points / topics, each concise",
+                items: .init(type: "string", properties: nil, required: nil)),
+            "action_items": .init(
+                type: "array", enum: nil, description: "Concrete action items, with owner where stated",
+                items: .init(type: "string", properties: nil, required: nil)),
+            "suggested_questions": .init(
+                type: "array", enum: nil, description: "2-3 useful follow-up questions to move the conversation forward",
+                items: .init(type: "string", properties: nil, required: nil)),
+        ],
+        required: ["overview", "key_points"]
+    )
+}
+
+/// Structured live summary of a conversation session (ported from glass's summary structure).
+struct CopilotSessionSummary: Decodable, Equatable {
+    let overview: String
+    let keyPoints: [String]
+    let actionItems: [String]
+    let suggestedQuestions: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case overview
+        case keyPoints = "key_points"
+        case actionItems = "action_items"
+        case suggestedQuestions = "suggested_questions"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        overview = try c.decode(String.self, forKey: .overview)
+        keyPoints = try c.decode([String].self, forKey: .keyPoints)
+        actionItems = (try? c.decode([String].self, forKey: .actionItems)) ?? []
+        suggestedQuestions = (try? c.decode([String].self, forKey: .suggestedQuestions)) ?? []
+    }
+
+    /// Markdown rendering for display and for the post-session note.
+    var markdown: String {
+        var md = "**Summary**\n\(overview)\n"
+        if !keyPoints.isEmpty {
+            md += "\n**Key points**\n" + keyPoints.map { "- \($0)" }.joined(separator: "\n") + "\n"
+        }
+        if !actionItems.isEmpty {
+            md += "\n**Action items**\n" + actionItems.map { "- \($0)" }.joined(separator: "\n") + "\n"
+        }
+        if !suggestedQuestions.isEmpty {
+            md += "\n**Suggested questions**\n"
+                + suggestedQuestions.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n") + "\n"
+        }
+        return md
+    }
 }
 
 /// Parsed structured response from the live suggestion call.

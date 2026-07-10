@@ -211,6 +211,8 @@ extension AppState {
             LiveNotesMonitor.shared.startSession(sessionId: sessionId)
             // Start live copilot suggestions session
             LiveSuggestionsMonitor.shared.startSession(sessionId: sessionId)
+            // Start structured session summary
+            SessionSummaryMonitor.shared.startSession(sessionId: sessionId)
           }
           if let backendId = await MainActor.run(body: { () -> String? in
             let candidate = self.pendingBackendConversationId ?? self.currentBackendConversationId
@@ -857,6 +859,7 @@ extension AppState {
     LiveNotesMonitor.shared.endSession()
     LiveNotesMonitor.shared.clear()
     LiveSuggestionsMonitor.shared.endSession()
+    SessionSummaryMonitor.shared.endSession()
 
     // Reset the recording start time and backend binding for the next conversation.
     // If the new WebSocket fast-reconnects before the backend finalizes the prior
@@ -991,6 +994,7 @@ extension AppState {
           self.currentSessionId = sessionId
           LiveNotesMonitor.shared.startSession(sessionId: sessionId)
           LiveSuggestionsMonitor.shared.startSession(sessionId: sessionId)
+          SessionSummaryMonitor.shared.startSession(sessionId: sessionId)
         }
         if let backendId = await MainActor.run(body: { () -> String? in
           let candidate = self.pendingBackendConversationId ?? self.currentBackendConversationId
@@ -1092,6 +1096,7 @@ extension AppState {
     // End live notes session
     LiveNotesMonitor.shared.endSession()
     LiveSuggestionsMonitor.shared.endSession()
+    SessionSummaryMonitor.shared.endSession()
 
     // Mark DB session as finished (pending upload / crash recovery)
     if finishSession, let sessionId = currentSessionId {
