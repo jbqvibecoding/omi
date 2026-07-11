@@ -11,6 +11,7 @@ class CopilotSettings {
     private let scenarioIdKey = "copilotLiveScenarioId"
     private let examUnlockedKey = "copilotLiveExamUnlocked"
     private let adaptiveThresholdKey = "copilotLiveAdaptiveThreshold"
+    private let autoSelectScenarioKey = "copilotLiveAutoSelectScenario"
     private let minConfidenceKey = "copilotLiveMinConfidence"
     private let suggestionCooldownKey = "copilotLiveSuggestionCooldown"
     private let maxPerSessionKey = "copilotLiveMaxSuggestionsPerSession"
@@ -31,6 +32,7 @@ class CopilotSettings {
             suggestionCooldownKey: defaultSuggestionCooldown,
             maxPerSessionKey: defaultMaxPerSession,
             adaptiveThresholdKey: true,
+            autoSelectScenarioKey: true,
         ])
     }
 
@@ -78,6 +80,15 @@ class CopilotSettings {
         get { UserDefaults.standard.bool(forKey: adaptiveThresholdKey) }
         set {
             UserDefaults.standard.set(newValue, forKey: adaptiveThresholdKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Whether the scenario profile is auto-selected from the calendar at session start.
+    var autoSelectScenario: Bool {
+        get { UserDefaults.standard.bool(forKey: autoSelectScenarioKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: autoSelectScenarioKey)
             NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
         }
     }

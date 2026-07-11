@@ -68,6 +68,21 @@ final class LiveSuggestionsMonitor: ObservableObject {
         suggestionsThisSession = []
         gateSpeakCount = 0
         gateSkipCount = 0
+
+        // Auto-select the scenario profile from the calendar (non-blocking, graceful).
+        if CopilotSettings.shared.autoSelectScenario {
+            let startedSessionId = sessionId
+            Task { [weak self] in
+                guard let scenarioId = await CalendarScenarioSelector.suggestScenario() else { return }
+                // Only apply if this session is still active and the user hasn't already changed it.
+                guard let self, self.currentSessionId == startedSessionId else { return }
+                guard scenarioId != CopilotSettings.shared.scenarioId else { return }
+                CopilotSettings.shared.scenarioId = scenarioId
+                log("LiveSuggestionsMonitor: auto-selected scenario '\(scenarioId)' from calendar")
+                PostHogManager.shared.track(
+                    "copilot_scenario_autoselected", properties: ["scenario": scenarioId])
+            }
+        }
     }
 
     func endSession() {

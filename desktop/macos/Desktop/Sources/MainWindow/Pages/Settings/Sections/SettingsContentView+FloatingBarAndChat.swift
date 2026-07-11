@@ -81,6 +81,26 @@ extension SettingsContentView {
 
             HStack {
               VStack(alignment: .leading, spacing: 2) {
+                Text("Auto-pick scenario from calendar")
+                  .scaledFont(size: 14)
+                  .foregroundColor(OmiColors.textPrimary)
+                Text("Uses your current calendar event to choose the profile when a session starts")
+                  .scaledFont(size: 12)
+                  .foregroundColor(OmiColors.textTertiary)
+              }
+
+              Spacer()
+
+              Toggle("", isOn: $copilotAutoScenario)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .onChange(of: copilotAutoScenario) { _, newValue in
+                  CopilotSettings.shared.autoSelectScenario = newValue
+                }
+            }
+
+            HStack {
+              VStack(alignment: .leading, spacing: 2) {
                 Text("Learn from my feedback")
                   .scaledFont(size: 14)
                   .foregroundColor(OmiColors.textPrimary)
