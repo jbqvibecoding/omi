@@ -334,6 +334,7 @@ struct SettingsContentView: View {
     case account = "Account"
     case planUsage = "Plan and Usage"
     case aiChat = "AI Chat"
+    case copilot = "Copilot"
     case floatingBar = "Floating Bar"
     case shortcuts = "Shortcuts"
     case advanced = "Advanced"
@@ -495,6 +496,8 @@ struct SettingsContentView: View {
           planUsageSection
         case .aiChat:
           aiChatSection
+        case .copilot:
+          copilotSection
         case .floatingBar:
           floatingBarSection
         case .shortcuts:
