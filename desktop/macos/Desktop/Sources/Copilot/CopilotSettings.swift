@@ -70,9 +70,9 @@ class CopilotSettings {
         }
     }
 
-    /// Profiles to show in the picker (includes exam only when unlocked).
+    /// Profiles to show in the picker (built-ins, exam only when unlocked, plus custom).
     var availableScenarios: [CopilotScenarioProfile] {
-        examProfileUnlocked ? CopilotScenarioProfile.allIncludingGated : CopilotScenarioProfile.all
+        CopilotScenarioProfile.allAvailable
     }
 
     /// Whether the copilot adapts its confidence threshold from your feedback (dismiss/accept).

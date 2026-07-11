@@ -175,6 +175,34 @@ extension CopilotPrompts {
         required: ["headline", "suggestion", "confidence"]
     )
 
+    // MARK: - Custom scenario profile generation
+
+    static let customProfileSystemPrompt = """
+        You design a copilot scenario profile from a one-line description of the user's situation. \
+        The copilot listens to a live conversation and pushes short, immediately-usable suggestions. \
+        Produce: a short display name; a system prompt block describing the role and what qualifies \
+        as a high-value suggestion in this scenario (2-4 sentences, concrete, matching the style of \
+        'high-value suggestions are: ...'); and 6-12 trigger words/phrases that, when heard, mean a \
+        suggestion is likely worth making.
+        """
+
+    static func customProfileUserPrompt(description: String) -> String {
+        "User's scenario: \(description)"
+    }
+
+    static let customProfileSchema = GeminiRequest.GenerationConfig.ResponseSchema(
+        type: "object",
+        properties: [
+            "display_name": .init(type: "string", enum: nil, description: "Short scenario name, 1-3 words"),
+            "system_prompt_block": .init(
+                type: "string", enum: nil, description: "Role + what qualifies as a high-value suggestion, 2-4 sentences"),
+            "trigger_vocabulary": .init(
+                type: "array", enum: nil, description: "6-12 lowercase trigger words/phrases",
+                items: .init(type: "string", properties: nil, required: nil)),
+        ],
+        required: ["display_name", "system_prompt_block", "trigger_vocabulary"]
+    )
+
     // MARK: - Structured session summary (ported from glass summaryService)
 
     static let sessionSummarySystemPrompt = """
@@ -215,6 +243,19 @@ extension CopilotPrompts {
         ],
         required: ["overview", "key_points"]
     )
+}
+
+/// Parsed AI-generated custom profile draft.
+struct CopilotCustomProfileDraft: Decodable {
+    let displayName: String
+    let systemPromptBlock: String
+    let triggerVocabulary: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case displayName = "display_name"
+        case systemPromptBlock = "system_prompt_block"
+        case triggerVocabulary = "trigger_vocabulary"
+    }
 }
 
 /// Structured live summary of a conversation session (ported from glass's summary structure).

@@ -77,6 +77,11 @@ extension SettingsContentView {
               .onChange(of: copilotScenarioId) { _, newValue in
                 CopilotSettings.shared.scenarioId = newValue
               }
+
+              Button("Manage") { showCopilotProfilesManager = true }
+                .buttonStyle(.plain)
+                .scaledFont(size: 12)
+                .foregroundColor(OmiColors.textSecondary)
             }
 
             HStack {
@@ -181,6 +186,9 @@ extension SettingsContentView {
                 ShortcutSettings.shared.stealthModeEnabled = newValue
               }
           }
+        }
+        .sheet(isPresented: $showCopilotProfilesManager) {
+          CopilotProfilesManagerView { showCopilotProfilesManager = false }
         }
       }
 

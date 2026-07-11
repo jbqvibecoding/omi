@@ -3,7 +3,7 @@ import Foundation
 /// A scenario profile shapes what the live copilot considers a high-value
 /// suggestion: same engine, different judgement criteria, trigger vocabulary,
 /// and output tone. Struct (not enum) so custom/third-party profiles can join later.
-struct CopilotScenarioProfile: Identifiable, Equatable {
+struct CopilotScenarioProfile: Identifiable, Equatable, Codable {
     let id: String
     let displayName: String
     /// Role + what qualifies as a suggestion worth interrupting for + output tone.
@@ -12,6 +12,8 @@ struct CopilotScenarioProfile: Identifiable, Equatable {
     /// transcript text triggers an evaluation without waiting for the word budget.
     /// Empty = word-count trigger only.
     let triggerVocabulary: [String]
+    /// True for user-created profiles (persisted in CustomProfileStore).
+    var isCustom: Bool = false
 
     static let meeting = CopilotScenarioProfile(
         id: "meeting",
@@ -116,7 +118,18 @@ struct CopilotScenarioProfile: Identifiable, Equatable {
     /// All profiles including the gated exam profile (used when it is unlocked).
     static let allIncludingGated: [CopilotScenarioProfile] = all + [exam]
 
+    /// Built-in + user custom profiles, honoring the exam-unlock gate.
+    @MainActor
+    static var allAvailable: [CopilotScenarioProfile] {
+        let builtIns = CopilotSettings.shared.examProfileUnlocked ? allIncludingGated : all
+        return builtIns + CustomProfileStore.shared.profiles
+    }
+
+    @MainActor
     static func byId(_ id: String) -> CopilotScenarioProfile {
-        allIncludingGated.first { $0.id == id } ?? .meeting
+        if let custom = CustomProfileStore.shared.profiles.first(where: { $0.id == id }) {
+            return custom
+        }
+        return allIncludingGated.first { $0.id == id } ?? .meeting
     }
 }

@@ -164,6 +164,7 @@ struct SettingsContentView: View {
   @State var stealthModeEnabled: Bool
   @State var copilotAdaptiveEnabled: Bool
   @State var copilotAutoScenario: Bool
+  @State var showCopilotProfilesManager = false
 
   // Advice Assistant states
   @State var insightEnabled: Bool
