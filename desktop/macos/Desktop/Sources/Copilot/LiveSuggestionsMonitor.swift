@@ -275,14 +275,22 @@ final class LiveSuggestionsMonitor: ObservableObject {
             detail: result.talkTrack,
             feedbackBucket: "\(CopilotSettings.shared.scenario.id):\(gateType)"
         )
-        NotificationService.shared.sendNotification(
-            title: result.headline,
-            message: result.suggestion,
-            assistantId: "copilot",
-            sound: .none,
-            context: context,
-            respectFrequency: false
-        )
+        // While presenting, only surface audience-driven cards (questions / term definitions);
+        // the presenter's own narration shouldn't trigger interruptions. Suppressed suggestions
+        // are still persisted so they're reviewable in history afterward.
+        let deliverAsCard = PresentationModeMonitor.shared.shouldDeliver(gateType: gateType)
+        if deliverAsCard {
+            NotificationService.shared.sendNotification(
+                title: result.headline,
+                message: result.suggestion,
+                assistantId: "copilot",
+                sound: .none,
+                context: context,
+                respectFrequency: false
+            )
+        } else {
+            log("LiveSuggestionsMonitor: presenting — suppressed non-audience card (\(gateType))")
+        }
         suggestionsThisSession.append(result.suggestion)
         lastSuggestionAt = Date()
 

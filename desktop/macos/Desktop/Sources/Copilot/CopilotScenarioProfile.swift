@@ -112,8 +112,21 @@ struct CopilotScenarioProfile: Identifiable, Equatable, Codable {
         ]
     )
 
+    static let presentation = CopilotScenarioProfile(
+        id: "presentation",
+        displayName: "Presentation",
+        systemPromptBlock: """
+            Scenario: the user is presenting or demoing. While they are speaking, stay silent — \
+            you are only valuable when the audience asks a question or needs context. When a \
+            question comes, give a tight, confident answer the presenter can say out loud, backed \
+            by a specific number or fact where possible. If a proper noun the audience may not know \
+            just came up, define it in one line.
+            """,
+        triggerVocabulary: ["question", "how does", "what about", "can you explain", "why", "does it"]
+    )
+
     /// Profiles always available in the picker.
-    static let all: [CopilotScenarioProfile] = [meeting, sales, interview, support, negotiation]
+    static let all: [CopilotScenarioProfile] = [meeting, sales, interview, support, negotiation, presentation]
 
     /// All profiles including the gated exam profile (used when it is unlocked).
     static let allIncludingGated: [CopilotScenarioProfile] = all + [exam]
