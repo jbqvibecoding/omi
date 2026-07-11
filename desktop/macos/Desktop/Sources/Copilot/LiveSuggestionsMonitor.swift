@@ -155,11 +155,16 @@ final class LiveSuggestionsMonitor: ObservableObject {
         do {
             let client = try cachedGeminiClient()
 
-            // Stage 1 — gate (cheap text call with its own timeout, expected to mostly say SKIP)
+            // Stage 1 — gate (cheap text call with its own timeout, expected to mostly say SKIP).
+            // Fold recently-dismissed suggestion texts into the "do not repeat" block so the gate
+            // learns which kinds of suggestions this user rejects (semantic suppression).
+            let suppressed = CopilotSettings.shared.adaptiveThresholdEnabled
+                ? CopilotFeedbackTuner.shared.dismissedTexts(scenario: scenario.id)
+                : []
             let gateText = try await client.sendTextRequest(
                 prompt: CopilotPrompts.liveGateUserPrompt(
                     transcript: transcript,
-                    recentSuggestions: suggestionsThisSession,
+                    recentSuggestions: suggestionsThisSession + suppressed,
                     scenario: scenario
                 ),
                 systemPrompt: CopilotPrompts.liveGateSystemPrompt,
@@ -201,8 +206,13 @@ final class LiveSuggestionsMonitor: ObservableObject {
             }
             let result = try JSONDecoder().decode(CopilotLiveSuggestion.self, from: Data(responseText.utf8))
 
-            guard result.confidence >= CopilotSettings.shared.minConfidence else {
-                log("LiveSuggestionsMonitor: dropped low-confidence suggestion (\(result.confidence))")
+            // Confidence gate — the threshold adapts per (scenario × type) from user feedback.
+            let minConfidence = CopilotSettings.shared.adaptiveThresholdEnabled
+                ? CopilotFeedbackTuner.shared.effectiveMinConfidence(
+                    baseline: CopilotSettings.shared.minConfidence, scenario: scenario.id, type: gateType)
+                : CopilotSettings.shared.minConfidence
+            guard result.confidence >= minConfidence else {
+                log("LiveSuggestionsMonitor: dropped low-confidence suggestion (\(result.confidence) < \(minConfidence))")
                 return ["gate": "SPEAK \(gateType)", "dropped": "confidence \(result.confidence)"]
             }
 
@@ -247,7 +257,8 @@ final class LiveSuggestionsMonitor: ObservableObject {
             contextSummary: String(transcript.suffix(300)),
             currentActivity: nil,
             reasoning: gateType,
-            detail: result.talkTrack
+            detail: result.talkTrack,
+            feedbackBucket: "\(CopilotSettings.shared.scenario.id):\(gateType)"
         )
         NotificationService.shared.sendNotification(
             title: result.headline,

@@ -3359,6 +3359,12 @@ class FloatingControlBarManager {
             assistantId: notification.assistantId,
             surface: "floating_bar"
         )
+        // Expanding a card into chat is positive engagement — feed the tuner.
+        CopilotFeedbackTuner.shared.record(
+            notificationId: notification.id,
+            bucket: notification.context?.feedbackBucket,
+            outcome: .accepted
+        )
 
         notificationDismissWorkItem?.cancel()
         notificationDismissWorkItem = nil
@@ -3411,6 +3417,14 @@ class FloatingControlBarManager {
                 title: dismissedNotification.title,
                 assistantId: dismissedNotification.assistantId,
                 surface: "floating_bar"
+            )
+            // Dismiss (manual X or auto-timeout) is non-engagement. Idempotent: if Copy/Execute
+            // already recorded .accepted for this card, this is a no-op.
+            CopilotFeedbackTuner.shared.record(
+                notificationId: dismissedNotification.id,
+                bucket: dismissedNotification.context?.feedbackBucket,
+                outcome: .ignored,
+                suggestionText: dismissedNotification.message
             )
         }
 

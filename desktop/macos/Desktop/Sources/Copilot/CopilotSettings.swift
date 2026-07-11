@@ -10,6 +10,7 @@ class CopilotSettings {
     private let enabledKey = "copilotLiveEnabled"
     private let scenarioIdKey = "copilotLiveScenarioId"
     private let examUnlockedKey = "copilotLiveExamUnlocked"
+    private let adaptiveThresholdKey = "copilotLiveAdaptiveThreshold"
     private let minConfidenceKey = "copilotLiveMinConfidence"
     private let suggestionCooldownKey = "copilotLiveSuggestionCooldown"
     private let maxPerSessionKey = "copilotLiveMaxSuggestionsPerSession"
@@ -29,6 +30,7 @@ class CopilotSettings {
             minConfidenceKey: defaultMinConfidence,
             suggestionCooldownKey: defaultSuggestionCooldown,
             maxPerSessionKey: defaultMaxPerSession,
+            adaptiveThresholdKey: true,
         ])
     }
 
@@ -69,6 +71,15 @@ class CopilotSettings {
     /// Profiles to show in the picker (includes exam only when unlocked).
     var availableScenarios: [CopilotScenarioProfile] {
         examProfileUnlocked ? CopilotScenarioProfile.allIncludingGated : CopilotScenarioProfile.all
+    }
+
+    /// Whether the copilot adapts its confidence threshold from your feedback (dismiss/accept).
+    var adaptiveThresholdEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: adaptiveThresholdKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: adaptiveThresholdKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
     }
 
     /// Minimum confidence for showing a live suggestion

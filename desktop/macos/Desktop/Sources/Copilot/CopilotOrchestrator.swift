@@ -55,6 +55,13 @@ final class CopilotOrchestrator {
         }
 
         DesktopAutomationActionRegistry.shared.register(
+            name: "copilot_tuner_dump",
+            summary: "Dump the feedback tuner's per-(scenario:type) accepted/ignored counts and dismiss rates."
+        ) { _ in
+            await CopilotFeedbackTuner.shared.debugDump()
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
             name: "copilot_summary_test",
             summary: "Force-generate the structured session summary from the current/last transcript; "
                 + "returns overview + key-point/action counts."

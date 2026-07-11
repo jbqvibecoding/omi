@@ -162,6 +162,7 @@ struct SettingsContentView: View {
   @State var copilotScenarioId: String
   @State var screenOpEnabled: Bool
   @State var stealthModeEnabled: Bool
+  @State var copilotAdaptiveEnabled: Bool
 
   // Advice Assistant states
   @State var insightEnabled: Bool
@@ -438,6 +439,7 @@ struct SettingsContentView: View {
     _copilotScenarioId = State(initialValue: CopilotSettings.shared.scenarioId)
     _screenOpEnabled = State(initialValue: ScreenOpAssistantSettings.shared.isEnabled)
     _stealthModeEnabled = State(initialValue: ShortcutSettings.shared.stealthModeEnabled)
+    _copilotAdaptiveEnabled = State(initialValue: CopilotSettings.shared.adaptiveThresholdEnabled)
     _insightEnabled = State(initialValue: InsightAssistantSettings.shared.isEnabled)
     _insightExtractionInterval = State(
       initialValue: InsightAssistantSettings.shared.extractionInterval)

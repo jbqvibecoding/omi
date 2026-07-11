@@ -922,6 +922,9 @@ struct FloatingControlBarView: View {
                         let textToCopy = notification.context?.detail ?? notification.message
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(textToCopy, forType: .string)
+                        CopilotFeedbackTuner.shared.record(
+                            notificationId: notification.id,
+                            bucket: notification.context?.feedbackBucket, outcome: .accepted)
                         FloatingControlBarManager.shared.dismissCurrentNotification()
                     } label: {
                         HStack(spacing: 4) {
@@ -956,6 +959,9 @@ struct FloatingControlBarView: View {
                             model: model,
                             systemPromptSuffix: ProactiveTaskExecute.systemPromptSuffix
                         )
+                        CopilotFeedbackTuner.shared.record(
+                            notificationId: notification.id,
+                            bucket: notification.context?.feedbackBucket, outcome: .accepted)
                         FloatingControlBarManager.shared.dismissCurrentNotification()
                     } label: {
                         HStack(spacing: 4) {

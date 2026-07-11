@@ -78,6 +78,42 @@ extension SettingsContentView {
                 CopilotSettings.shared.scenarioId = newValue
               }
             }
+
+            HStack {
+              VStack(alignment: .leading, spacing: 2) {
+                Text("Learn from my feedback")
+                  .scaledFont(size: 14)
+                  .foregroundColor(OmiColors.textPrimary)
+                Text("Suggestion types you dismiss get quieter; ones you act on come more readily")
+                  .scaledFont(size: 12)
+                  .foregroundColor(OmiColors.textTertiary)
+              }
+
+              Spacer()
+
+              Toggle("", isOn: $copilotAdaptiveEnabled)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .onChange(of: copilotAdaptiveEnabled) { _, newValue in
+                  CopilotSettings.shared.adaptiveThresholdEnabled = newValue
+                }
+            }
+
+            if copilotAdaptiveEnabled && !CopilotFeedbackTuner.shared.adaptationSummary().isEmpty {
+              VStack(alignment: .leading, spacing: 4) {
+                ForEach(CopilotFeedbackTuner.shared.adaptationSummary(), id: \.bucket) { item in
+                  Text("· \(item.bucket): \(item.direction)")
+                    .scaledFont(size: 11)
+                    .foregroundColor(OmiColors.textTertiary)
+                }
+                Button("Reset learning") {
+                  CopilotFeedbackTuner.shared.reset()
+                }
+                .scaledFont(size: 12)
+                .buttonStyle(.plain)
+                .foregroundColor(OmiColors.textSecondary)
+              }
+            }
           }
 
           Divider()
