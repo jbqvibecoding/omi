@@ -34,6 +34,8 @@ abstract class MessageEvent {
         return FreemiumThresholdReachedEvent.fromJson(json);
       case 'segments_deleted':
         return SegmentsDeletedEvent.fromJson(json);
+      case 'proactive_suggestion':
+        return ProactiveSuggestionEvent.fromJson(json);
       default:
         // Return a generic event or throw an error if the type is unknown
         return UnknownEvent(eventType: json['type'] ?? 'unknown');
@@ -123,6 +125,34 @@ class PhotoDescribedEvent extends MessageEvent {
       photoId: json['photo_id'],
       description: json['description'],
       discarded: json['discarded'] ?? false,
+    );
+  }
+}
+
+/// In-session live copilot suggestion pushed from the backend on the /v4/listen
+/// socket — the phone/glasses parity of the desktop live copilot.
+class ProactiveSuggestionEvent extends MessageEvent {
+  final String suggestion;
+  final String? headline;
+  final String? category;
+  final double? confidence;
+  final String? scenario;
+
+  ProactiveSuggestionEvent({
+    required this.suggestion,
+    this.headline,
+    this.category,
+    this.confidence,
+    this.scenario,
+  }) : super(eventType: 'proactive_suggestion');
+
+  factory ProactiveSuggestionEvent.fromJson(Map<String, dynamic> json) {
+    return ProactiveSuggestionEvent(
+      suggestion: json['suggestion'] ?? '',
+      headline: json['headline'],
+      category: json['category'],
+      confidence: (json['confidence'] as num?)?.toDouble(),
+      scenario: json['scenario'],
     );
   }
 }
