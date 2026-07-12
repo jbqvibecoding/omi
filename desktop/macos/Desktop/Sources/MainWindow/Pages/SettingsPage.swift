@@ -165,6 +165,9 @@ struct SettingsContentView: View {
   @State var copilotAdaptiveEnabled: Bool
   @State var copilotAutoScenario: Bool
   @State var showCopilotProfilesManager = false
+  @State var copilotNotesRagEnabled: Bool
+  @State var copilotNotesFolderPath: String
+  @State var copilotNotesIndexStatus: String = ""
 
   // Advice Assistant states
   @State var insightEnabled: Bool
@@ -444,6 +447,8 @@ struct SettingsContentView: View {
     _stealthModeEnabled = State(initialValue: ShortcutSettings.shared.stealthModeEnabled)
     _copilotAdaptiveEnabled = State(initialValue: CopilotSettings.shared.adaptiveThresholdEnabled)
     _copilotAutoScenario = State(initialValue: CopilotSettings.shared.autoSelectScenario)
+    _copilotNotesRagEnabled = State(initialValue: CopilotSettings.shared.notesRagEnabled)
+    _copilotNotesFolderPath = State(initialValue: CopilotSettings.shared.notesFolderPath ?? "")
     _insightEnabled = State(initialValue: InsightAssistantSettings.shared.isEnabled)
     _insightExtractionInterval = State(
       initialValue: InsightAssistantSettings.shared.extractionInterval)

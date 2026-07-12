@@ -15,6 +15,8 @@ class CopilotSettings {
     private let minConfidenceKey = "copilotLiveMinConfidence"
     private let suggestionCooldownKey = "copilotLiveSuggestionCooldown"
     private let maxPerSessionKey = "copilotLiveMaxSuggestionsPerSession"
+    private let notesFolderPathKey = "copilotNotesFolderPath"
+    private let notesRagEnabledKey = "copilotNotesRagEnabled"
 
     // MARK: - Default Values
 
@@ -33,6 +35,7 @@ class CopilotSettings {
             maxPerSessionKey: defaultMaxPerSession,
             adaptiveThresholdKey: true,
             autoSelectScenarioKey: true,
+            notesRagEnabledKey: true,
         ])
     }
 
@@ -115,6 +118,34 @@ class CopilotSettings {
             UserDefaults.standard.set(newValue, forKey: suggestionCooldownKey)
             NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
         }
+    }
+
+    /// Notes folder indexed for live retrieval (Obsidian vault / any .md/.txt directory).
+    /// nil = feature not configured.
+    var notesFolderPath: String? {
+        get {
+            let value = UserDefaults.standard.string(forKey: notesFolderPathKey)
+            return (value?.isEmpty ?? true) ? nil : value
+        }
+        set {
+            UserDefaults.standard.set(newValue ?? "", forKey: notesFolderPathKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Whether the live copilot retrieves from the notes folder (only effective once
+    /// a folder is configured).
+    var notesRagEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: notesRagEnabledKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: notesRagEnabledKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// True when notes retrieval is both enabled and configured.
+    var notesRagActive: Bool {
+        notesRagEnabled && notesFolderPath != nil
     }
 
     /// Hard cap on suggestions per recording session

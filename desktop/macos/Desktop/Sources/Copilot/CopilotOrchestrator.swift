@@ -70,6 +70,25 @@ final class CopilotOrchestrator {
         }
 
         DesktopAutomationActionRegistry.shared.register(
+            name: "copilot_notes_index",
+            summary: "Index (incrementally) the configured copilot notes folder into the notes "
+                + "knowledge base; returns scanned/embedded/reused/pruned counts."
+        ) { _ in
+            await NotesKnowledgeBase.shared.debugIndex()
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
+            name: "copilot_notes_search",
+            summary: "Search the notes knowledge base; returns top hits with source breadcrumbs.",
+            params: ["query"]
+        ) { params in
+            guard let query = params["query"], !query.isEmpty else {
+                return ["error": "missing query param"]
+            }
+            return await NotesKnowledgeBase.shared.debugSearch(query: query)
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
             name: "screen_op_test",
             summary: "Run one Screen-Op analysis on the frontmost app (bypasses the interval); "
                 + "returns headline/confidence/sql_count or no_suggestion. Requires monitoring to be on.",

@@ -63,6 +63,76 @@ extension SettingsContentView {
                 }
             }
 
+            // Answers from your notes (notes-folder retrieval)
+            settingsCard(settingId: "copilot.notes") {
+                VStack(alignment: .leading, spacing: 16) {
+                    copilotToggleRow(
+                        icon: "text.book.closed",
+                        title: "Answers from your notes",
+                        subtitle:
+                            "When a key question comes up mid-meeting, surfaces the relevant points from your notes folder.",
+                        isOn: $copilotNotesRagEnabled
+                    ) { CopilotSettings.shared.notesRagEnabled = $0 }
+
+                    if copilotNotesRagEnabled {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Notes folder").scaledFont(size: 14)
+                                    .foregroundColor(OmiColors.textPrimary)
+                                Text(
+                                    copilotNotesFolderPath.isEmpty
+                                        ? "Pick a folder of .md/.txt notes (an Obsidian vault works)"
+                                        : copilotNotesFolderPath
+                                )
+                                .scaledFont(size: 11)
+                                .foregroundColor(OmiColors.textTertiary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            }
+                            Spacer()
+                            Button(copilotNotesFolderPath.isEmpty ? "Choose..." : "Change...") {
+                                let panel = NSOpenPanel()
+                                panel.canChooseFiles = false
+                                panel.canChooseDirectories = true
+                                panel.allowsMultipleSelection = false
+                                if !copilotNotesFolderPath.isEmpty {
+                                    panel.directoryURL = URL(fileURLWithPath: copilotNotesFolderPath)
+                                }
+                                if panel.runModal() == .OK, let url = panel.url {
+                                    copilotNotesFolderPath = url.path
+                                    CopilotSettings.shared.notesFolderPath = url.path
+                                    copilotNotesIndexStatus = "Indexing..."
+                                    Task {
+                                        let r = await NotesKnowledgeBase.shared.index()
+                                        copilotNotesIndexStatus =
+                                            r.error ?? "\(r.scannedFiles) files, \(r.totalChunks) chunks indexed"
+                                    }
+                                }
+                            }
+                            .scaledFont(size: 13)
+
+                            if !copilotNotesFolderPath.isEmpty {
+                                Button("Reindex") {
+                                    copilotNotesIndexStatus = "Indexing..."
+                                    Task {
+                                        let r = await NotesKnowledgeBase.shared.index()
+                                        copilotNotesIndexStatus =
+                                            r.error ?? "\(r.scannedFiles) files, \(r.totalChunks) chunks indexed"
+                                    }
+                                }
+                                .scaledFont(size: 13)
+                            }
+                        }
+
+                        if !copilotNotesIndexStatus.isEmpty {
+                            Text(copilotNotesIndexStatus)
+                                .scaledFont(size: 11)
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+                    }
+                }
+            }
+
             // Screen-Op assist
             settingsCard(settingId: "copilot.screenop") {
                 copilotToggleRow(
