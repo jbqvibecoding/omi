@@ -73,6 +73,14 @@ final class CopilotOrchestrator {
         }
 
         DesktopAutomationActionRegistry.shared.register(
+            name: "copilot_minutes_test",
+            summary: "Generate template-driven meeting minutes from the current/last transcript "
+                + "using the active scenario's template; returns the markdown head."
+        ) { _ in
+            await SessionSummaryMonitor.shared.debugGenerateMinutes()
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
             name: "copilot_meeting_prompt_test",
             summary: "Force the 'Meeting detected — start copilot?' floating-bar card "
                 + "(bypasses detector state and cooldowns)."

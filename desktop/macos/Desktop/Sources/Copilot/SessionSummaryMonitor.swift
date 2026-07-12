@@ -55,24 +55,50 @@ final class SessionSummaryMonitor: ObservableObject {
             currentSessionId = nil
             return
         }
-        // Persist the final structured summary as one consolidated AI note (reuses
-        // NoteStorage — no schema change). Runs after the session ends.
-        let markdown = finalSummary.markdown
+        // Persist the final record as one consolidated AI note (reuses NoteStorage — no
+        // schema change). Preferred content is template-driven meeting minutes shaped by
+        // the active scenario (Meetily-style, chunked for long transcripts); the live
+        // running summary is the fallback if minutes generation fails.
+        let fallbackMarkdown = finalSummary.markdown
+        let segments = LiveTranscriptMonitor.shared.segments.isEmpty
+            ? LiveTranscriptMonitor.shared.savedSegments
+            : LiveTranscriptMonitor.shared.segments
+        let transcript = fullTranscript(from: segments)
+        let scenarioId = CopilotSettings.shared.scenario.id
+        let client = try? cachedGeminiClient()
         Task {
+            var markdown = fallbackMarkdown
+            var usedMinutes = false
+            if let client, !transcript.isEmpty {
+                do {
+                    let minutes = try await MeetingMinutesGenerator.generateMinutes(
+                        transcript: transcript, scenarioId: scenarioId, client: client)
+                    if !minutes.isEmpty {
+                        markdown = minutes
+                        usedMinutes = true
+                    }
+                } catch {
+                    logError(
+                        "SessionSummaryMonitor: minutes generation failed, keeping live summary",
+                        error: error)
+                }
+            }
             do {
                 _ = try await NoteStorage.shared.createNote(
                     sessionId: sessionId, text: markdown, isAiGenerated: true, segmentStartOrder: 0)
             } catch {
                 logError("SessionSummaryMonitor: failed to persist final summary", error: error)
             }
+            PostHogManager.shared.track(
+                "copilot_session_summary_saved",
+                properties: [
+                    "key_points": finalSummary.keyPoints.count,
+                    "action_items": finalSummary.actionItems.count,
+                    "minutes_template": usedMinutes,
+                    "transcript_chars": transcript.count,
+                ]
+            )
         }
-        PostHogManager.shared.track(
-            "copilot_session_summary_saved",
-            properties: [
-                "key_points": finalSummary.keyPoints.count,
-                "action_items": finalSummary.actionItems.count,
-            ]
-        )
         currentSessionId = nil
     }
 
@@ -107,6 +133,30 @@ final class SessionSummaryMonitor: ObservableObject {
         wordsSinceLastGenerate = 0
         Task { [weak self] in
             await self?.generate(transcript: transcript)
+        }
+    }
+
+    /// Force template-driven minutes generation from the current/last transcript
+    /// (omi-ctl debug action). Returns the minutes markdown head + diagnostics.
+    func debugGenerateMinutes() async -> [String: String] {
+        let segments = LiveTranscriptMonitor.shared.segments.isEmpty
+            ? LiveTranscriptMonitor.shared.savedSegments
+            : LiveTranscriptMonitor.shared.segments
+        let transcript = fullTranscript(from: segments)
+        guard !transcript.isEmpty else { return ["error": "no transcript available"] }
+        let scenarioId = CopilotSettings.shared.scenario.id
+        do {
+            let client = try cachedGeminiClient()
+            let minutes = try await MeetingMinutesGenerator.generateMinutes(
+                transcript: transcript, scenarioId: scenarioId, client: client)
+            return [
+                "template": MeetingMinutesGenerator.template(forScenario: scenarioId).id,
+                "transcript_chars": String(transcript.count),
+                "chunked": transcript.count > 60_000 ? "true" : "false",
+                "minutes_head": String(minutes.prefix(600)),
+            ]
+        } catch {
+            return ["error": error.localizedDescription]
         }
     }
 
