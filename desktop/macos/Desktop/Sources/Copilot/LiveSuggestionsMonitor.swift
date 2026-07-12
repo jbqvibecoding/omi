@@ -32,6 +32,8 @@ final class LiveSuggestionsMonitor: ObservableObject {
     // MARK: - Session State
 
     private var currentSessionId: Int64?
+    /// Whether a copilot session (i.e. a recording) is currently active.
+    var isSessionActive: Bool { currentSessionId != nil }
     /// End time of the last segment we consumed (incremental cursor, same technique as LiveNotesMonitor)
     private var lastProcessedSegmentEnd: Double?
     private var wordsSinceLastEval = 0

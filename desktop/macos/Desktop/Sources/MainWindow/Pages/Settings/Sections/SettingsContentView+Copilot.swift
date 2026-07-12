@@ -40,6 +40,12 @@ extension SettingsContentView {
                         ) { CopilotSettings.shared.autoSelectScenario = $0 }
 
                         copilotSubToggle(
+                            title: "Offer to start when a meeting is detected",
+                            subtitle: "Shows a one-click card when a call starts while you're not recording.",
+                            isOn: $copilotAutoDetectMeetings
+                        ) { CopilotSettings.shared.autoDetectMeetings = $0 }
+
+                        copilotSubToggle(
                             title: "Learn from my feedback",
                             subtitle: "Suggestion types you dismiss get quieter; ones you act on come readily.",
                             isOn: $copilotAdaptiveEnabled

@@ -825,6 +825,7 @@ struct FloatingControlBarView: View {
         switch notification.assistantId {
         case "task": return 90       // Execute + X
         case "copilot": return 150   // Copy + Execute + X
+        case "copilot_meeting": return 90  // Start + X
         default: return 36           // X only
         }
     }
@@ -978,6 +979,36 @@ struct FloatingControlBarView: View {
                     }
                     .buttonStyle(.plain)
                     .help("Spawn an agent to act on this suggestion")
+                }
+
+                // Meeting-detected offer: one click starts transcription (which brings up
+                // the live copilot, session summary, and calendar scenario selection).
+                if notification.assistantId == "copilot_meeting" {
+                    Button {
+                        AssistantSettings.shared.transcriptionEnabled = true
+                        NotificationCenter.default.post(
+                            name: .toggleTranscriptionRequested, object: nil,
+                            userInfo: ["enabled": true])
+                        CopilotFeedbackTuner.shared.record(
+                            notificationId: notification.id,
+                            bucket: notification.context?.feedbackBucket, outcome: .accepted)
+                        PostHogManager.shared.track("copilot_meeting_prompt_accepted", properties: [:])
+                        FloatingControlBarManager.shared.dismissCurrentNotification()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "waveform.badge.mic")
+                                .font(.system(size: 9, weight: .bold))
+                            Text("Start")
+                                .scaledFont(size: 10, weight: .semibold)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.18))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Start recording with the live copilot")
                 }
 
                 Button {

@@ -168,6 +168,7 @@ struct SettingsContentView: View {
   @State var copilotNotesRagEnabled: Bool
   @State var copilotNotesFolderPath: String
   @State var copilotNotesIndexStatus: String = ""
+  @State var copilotAutoDetectMeetings: Bool
 
   // Advice Assistant states
   @State var insightEnabled: Bool
@@ -449,6 +450,7 @@ struct SettingsContentView: View {
     _copilotAutoScenario = State(initialValue: CopilotSettings.shared.autoSelectScenario)
     _copilotNotesRagEnabled = State(initialValue: CopilotSettings.shared.notesRagEnabled)
     _copilotNotesFolderPath = State(initialValue: CopilotSettings.shared.notesFolderPath ?? "")
+    _copilotAutoDetectMeetings = State(initialValue: CopilotSettings.shared.autoDetectMeetings)
     _insightEnabled = State(initialValue: InsightAssistantSettings.shared.isEnabled)
     _insightExtractionInterval = State(
       initialValue: InsightAssistantSettings.shared.extractionInterval)

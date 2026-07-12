@@ -22,6 +22,9 @@ final class CopilotOrchestrator {
 
     /// Registers the omi-ctl debug action. Called once at app startup.
     func setup() {
+        // Watch for conferencing calls while idle and offer to start the copilot.
+        MeetingAutoDetectMonitor.shared.start()
+
         DesktopAutomationActionRegistry.shared.register(
             name: "copilot_snap",
             summary: "Trigger a Copilot Snap (screenshot + context → predictive answer in the floating bar); "
@@ -67,6 +70,14 @@ final class CopilotOrchestrator {
                 + "returns overview + key-point/action counts."
         ) { _ in
             await SessionSummaryMonitor.shared.debugGenerate()
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
+            name: "copilot_meeting_prompt_test",
+            summary: "Force the 'Meeting detected — start copilot?' floating-bar card "
+                + "(bypasses detector state and cooldowns)."
+        ) { _ in
+            await MeetingAutoDetectMonitor.shared.debugPrompt()
         }
 
         DesktopAutomationActionRegistry.shared.register(

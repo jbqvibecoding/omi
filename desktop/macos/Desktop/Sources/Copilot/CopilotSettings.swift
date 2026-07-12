@@ -17,6 +17,7 @@ class CopilotSettings {
     private let maxPerSessionKey = "copilotLiveMaxSuggestionsPerSession"
     private let notesFolderPathKey = "copilotNotesFolderPath"
     private let notesRagEnabledKey = "copilotNotesRagEnabled"
+    private let autoDetectMeetingsKey = "copilotAutoDetectMeetings"
 
     // MARK: - Default Values
 
@@ -36,6 +37,7 @@ class CopilotSettings {
             adaptiveThresholdKey: true,
             autoSelectScenarioKey: true,
             notesRagEnabledKey: true,
+            autoDetectMeetingsKey: true,
         ])
     }
 
@@ -146,6 +148,15 @@ class CopilotSettings {
     /// True when notes retrieval is both enabled and configured.
     var notesRagActive: Bool {
         notesRagEnabled && notesFolderPath != nil
+    }
+
+    /// Whether to watch for conferencing calls while idle and offer to start the copilot.
+    var autoDetectMeetings: Bool {
+        get { UserDefaults.standard.bool(forKey: autoDetectMeetingsKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: autoDetectMeetingsKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
     }
 
     /// Hard cap on suggestions per recording session
