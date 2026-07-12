@@ -42,6 +42,19 @@ final class LiveSuggestionsMonitor: ObservableObject {
     private var isEvaluating = false
     private var gateSpeakCount = 0
     private var gateSkipCount = 0
+    private var preGateSkipCount = 0
+
+    // MARK: - Notes retrieval (pre-fetched on a rolling window, OpenOats-style)
+
+    /// Notes hits are refreshed at most this often during a session.
+    private let kbPrefetchInterval: TimeInterval = 15
+    /// Hits older than this are considered stale and not used as evidence.
+    private let kbFreshnessBudget: TimeInterval = 45
+    /// Notes similarity at/above this counts as "the notes are relevant right now".
+    private let kbSimilarityThreshold: Float = 0.5
+    private var kbHits: [NotesKBHit] = []
+    private var kbFetchedAt: Date = .distantPast
+    private var isFetchingKB = false
 
     private var geminiClient: GeminiClient?
     private var cancellables = Set<AnyCancellable>()
@@ -68,6 +81,9 @@ final class LiveSuggestionsMonitor: ObservableObject {
         suggestionsThisSession = []
         gateSpeakCount = 0
         gateSkipCount = 0
+        preGateSkipCount = 0
+        kbHits = []
+        kbFetchedAt = .distantPast
 
         // Auto-select the scenario profile from the calendar (non-blocking, graceful).
         if CopilotSettings.shared.autoSelectScenario {
@@ -94,6 +110,7 @@ final class LiveSuggestionsMonitor: ObservableObject {
                 "suggestions": suggestionsThisSession.count,
                 "gate_speak": gateSpeakCount,
                 "gate_skip": gateSkipCount,
+                "pregate_skip": preGateSkipCount,
             ]
         )
         currentSessionId = nil
@@ -101,6 +118,7 @@ final class LiveSuggestionsMonitor: ObservableObject {
         wordsSinceLastEval = 0
         vocabularyHit = false
         suggestionsThisSession = []
+        kbHits = []
     }
 
     // MARK: - Transcript Handling
@@ -135,37 +153,108 @@ final class LiveSuggestionsMonitor: ObservableObject {
             }
         }
 
+        prefetchNotesIfNeeded(segments: segments)
         maybeEvaluate(segments: segments)
+    }
+
+    /// Continuously pre-fetches notes-folder hits for the rolling transcript window so a
+    /// finalized moment finds warm retrieval results (OpenOats' pre-fetch layer).
+    private func prefetchNotesIfNeeded(segments: [SpeakerSegment]) {
+        guard CopilotSettings.shared.notesRagActive else { return }
+        guard !isFetchingKB, Date().timeIntervalSince(kbFetchedAt) >= kbPrefetchInterval else { return }
+
+        let window = transcriptWindow(from: segments)
+        let queryWords = window.split(separator: " ").suffix(40)
+        guard queryWords.count >= 8 else { return }
+        let query = queryWords.joined(separator: " ")
+
+        isFetchingKB = true
+        Task { [weak self] in
+            let hits = await NotesKnowledgeBase.shared.search(queries: [query], topK: 3)
+            guard let self else { return }
+            self.kbHits = hits
+            self.kbFetchedAt = Date()
+            self.isFetchingKB = false
+            if let top = hits.first {
+                log(
+                    "LiveSuggestionsMonitor: notes prefetch — \(hits.count) hits, top "
+                        + "\(String(format: "%.2f", top.score)) (\(top.breadcrumb))")
+            }
+        }
+    }
+
+    /// Notes hits that are still fresh enough to use as evidence.
+    private var freshKBHits: [NotesKBHit] {
+        guard Date().timeIntervalSince(kbFetchedAt) <= kbFreshnessBudget else { return [] }
+        return kbHits
     }
 
     private func maybeEvaluate(segments: [SpeakerSegment]) {
         guard !isEvaluating else { return }
         guard wordsSinceLastEval >= wordThreshold || vocabularyHit else { return }
         guard Date().timeIntervalSince(lastEvalAt) >= evalCooldown else { return }
-        guard Date().timeIntervalSince(lastSuggestionAt) >= CopilotSettings.shared.suggestionCooldown else { return }
         guard suggestionsThisSession.count < CopilotSettings.shared.maxSuggestionsPerSession else { return }
+
+        let vocabulary = CopilotSettings.shared.scenario.triggerVocabulary
+        let questionDensity = CopilotRealtimeGate.questionDensity(
+            segments: segments, topicVocabulary: vocabulary)
+        let kbTopScore = freshKBHits.first?.score
+
+        // Burst-adaptive pacing (OpenOats): a hot stretch (questions flying / notes highly
+        // relevant) shrinks the suggestion cooldown so the copilot keeps up.
+        let cooldownScale = CopilotBurstPacing.cooldownScale(
+            questionDensity: questionDensity, kbRelevance: Double(kbTopScore ?? 0))
+        let effectiveCooldown = CopilotSettings.shared.suggestionCooldown * cooldownScale
+        guard Date().timeIntervalSince(lastSuggestionAt) >= effectiveCooldown else { return }
 
         let transcript = transcriptWindow(from: segments)
         guard !transcript.isEmpty else { return }
+
+        // Local pre-gate (OpenOats RealtimeGate): skip the LLM gate call entirely when the
+        // latest exchange is clearly not a moment. Scenario vocabulary hits bypass it —
+        // those words are explicit user configuration.
+        if !vocabularyHit {
+            let recentTail = transcript.split(separator: " ").suffix(25).joined(separator: " ")
+            let decision = CopilotRealtimeGate.evaluate(
+                recentText: recentTail,
+                kbTopScore: kbTopScore,
+                kbSimilarityThreshold: kbSimilarityThreshold,
+                recentSuggestionTexts: suggestionsThisSession,
+                topicVocabulary: vocabulary
+            )
+            if !decision.shouldProceed {
+                preGateSkipCount += 1
+                wordsSinceLastEval = 0
+                log("LiveSuggestionsMonitor: pre-gate skip (\(decision.reason))")
+                return
+            }
+        }
 
         isEvaluating = true
         lastEvalAt = Date()
         wordsSinceLastEval = 0
         vocabularyHit = false
         let cursorAtEval = lastProcessedSegmentEnd ?? 0
+        let hits = freshKBHits
 
         Task { [weak self] in
-            await self?.evaluate(transcript: transcript, cursorAtEval: cursorAtEval, bypassStaleness: false)
+            await self?.evaluate(
+                transcript: transcript, cursorAtEval: cursorAtEval, bypassStaleness: false,
+                kbHits: hits)
         }
     }
 
     /// Runs the two-stage pipeline. Returns diagnostics (used by the debug automation action).
     /// Callers must have set `isEvaluating = true`; it is cleared here on all paths.
     @discardableResult
-    func evaluate(transcript: String, cursorAtEval: Double, bypassStaleness: Bool) async -> [String: String] {
+    func evaluate(
+        transcript: String, cursorAtEval: Double, bypassStaleness: Bool,
+        kbHits: [NotesKBHit] = []
+    ) async -> [String: String] {
         defer { isEvaluating = false }
         let startedAt = Date()
         let scenario = CopilotSettings.shared.scenario
+        let notesEvidence = CopilotPrompts.notesEvidenceBlock(hits: kbHits)
 
         do {
             let client = try cachedGeminiClient()
@@ -180,7 +269,8 @@ final class LiveSuggestionsMonitor: ObservableObject {
                 prompt: CopilotPrompts.liveGateUserPrompt(
                     transcript: transcript,
                     recentSuggestions: suggestionsThisSession + suppressed,
-                    scenario: scenario
+                    scenario: scenario,
+                    notesEvidence: notesEvidence
                 ),
                 systemPrompt: CopilotPrompts.liveGateSystemPrompt,
                 maxRetries: 0,
@@ -207,7 +297,8 @@ final class LiveSuggestionsMonitor: ObservableObject {
                 transcript: transcript,
                 gateType: gateType,
                 recentSuggestions: suggestionsThisSession,
-                userProfile: profile
+                userProfile: profile,
+                notesEvidence: notesEvidence
             )
             let generateSystemPrompt = CopilotPrompts.liveSuggestionSystemPrompt(scenario: scenario)
             let responseText = try await withThrowingTimeoutCopilot(seconds: generateTimeout) {
@@ -238,7 +329,7 @@ final class LiveSuggestionsMonitor: ObservableObject {
                 return ["gate": "SPEAK \(gateType)", "dropped": "stale"]
             }
 
-            deliver(result, gateType: gateType, transcript: transcript)
+            deliver(result, gateType: gateType, transcript: transcript, kbHits: kbHits)
 
             let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1000)
             PostHogManager.shared.track(
@@ -248,6 +339,7 @@ final class LiveSuggestionsMonitor: ObservableObject {
                     "confidence": result.confidence,
                     "elapsed_ms": elapsedMs,
                     "has_talk_track": result.talkTrack?.isEmpty == false,
+                    "has_notes": !kbHits.isEmpty,
                 ]
             )
             return [
@@ -263,7 +355,16 @@ final class LiveSuggestionsMonitor: ObservableObject {
 
     // MARK: - Delivery
 
-    private func deliver(_ result: CopilotLiveSuggestion, gateType: String, transcript: String) {
+    private func deliver(
+        _ result: CopilotLiveSuggestion, gateType: String, transcript: String,
+        kbHits: [NotesKBHit] = []
+    ) {
+        // Show where the evidence came from ("From your notes: sales/pricing.md > Tiers").
+        var detail = result.talkTrack ?? ""
+        if let source = kbHits.first {
+            let sourceLine = "From your notes: \(source.breadcrumb)"
+            detail = detail.isEmpty ? sourceLine : "\(detail)\n\n\(sourceLine)"
+        }
         let context = FloatingBarNotificationContext(
             sourceTitle: "Copilot",
             assistantId: "copilot",
@@ -272,7 +373,7 @@ final class LiveSuggestionsMonitor: ObservableObject {
             contextSummary: String(transcript.suffix(300)),
             currentActivity: nil,
             reasoning: gateType,
-            detail: result.talkTrack,
+            detail: detail.isEmpty ? nil : detail,
             feedbackBucket: "\(CopilotSettings.shared.scenario.id):\(gateType)"
         )
         // While presenting, only surface audience-driven cards (questions / term definitions);
@@ -368,9 +469,20 @@ final class LiveSuggestionsMonitor: ObservableObject {
         )
         LiveTranscriptMonitor.shared.updateSegments([segment])
         guard !isEvaluating else { return ["error": "evaluation already running"] }
+        // Exercise the notes-retrieval path too when it's configured.
+        var hits: [NotesKBHit] = []
+        if CopilotSettings.shared.notesRagActive {
+            hits = await NotesKnowledgeBase.shared.search(queries: [text], topK: 3)
+        }
+        guard !isEvaluating else { return ["error": "evaluation already running"] }
         isEvaluating = true
         let transcript = transcriptWindow(from: [segment])
-        return await evaluate(transcript: transcript, cursorAtEval: segment.end, bypassStaleness: true)
+        var diagnostics = await evaluate(
+            transcript: transcript, cursorAtEval: segment.end, bypassStaleness: true, kbHits: hits)
+        if let top = hits.first {
+            diagnostics["notes_top_hit"] = "\(top.breadcrumb) (\(String(format: "%.2f", top.score)))"
+        }
+        return diagnostics
     }
 }
 
