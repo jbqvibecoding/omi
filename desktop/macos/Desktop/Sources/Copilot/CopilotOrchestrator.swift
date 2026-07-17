@@ -81,6 +81,36 @@ final class CopilotOrchestrator {
         }
 
         DesktopAutomationActionRegistry.shared.register(
+            name: "copilot_export_meeting",
+            summary: "Export the current/last session (summary + timestamped transcript) as a "
+                + "markdown file under ~/Documents/Omi/Meetings; returns the file path."
+        ) { _ in
+            let segments = await MainActor.run {
+                LiveTranscriptMonitor.shared.segments.isEmpty
+                    ? LiveTranscriptMonitor.shared.savedSegments
+                    : LiveTranscriptMonitor.shared.segments
+            }
+            guard !segments.isEmpty else { return ["error": "no transcript available"] }
+            let (scenarioName, notes) = await MainActor.run {
+                (
+                    CopilotSettings.shared.scenario.displayName,
+                    SessionSummaryMonitor.shared.summary?.markdown
+                )
+            }
+            guard
+                let url = MeetingMarkdownExporter.export(
+                    title: "\(scenarioName) session",
+                    startedAt: Date(),
+                    scenarioName: scenarioName,
+                    sessionId: nil,
+                    segments: segments,
+                    notesMarkdown: notes
+                )
+            else { return ["error": "nothing to export"] }
+            return ["path": url.path]
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
             name: "copilot_meeting_prompt_test",
             summary: "Force the 'Meeting detected — start copilot?' floating-bar card "
                 + "(bypasses detector state and cooldowns)."

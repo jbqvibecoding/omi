@@ -23,6 +23,7 @@ final class SessionSummaryMonitor: ObservableObject {
     private let generateTimeout: Double = 20
 
     private var currentSessionId: Int64?
+    private var sessionStartedAt: Date = Date()
     private var lastGeneratedAt: Date = .distantPast
     private var wordsSinceLastGenerate = 0
     private var lastProcessedSegmentEnd: Double?
@@ -44,6 +45,7 @@ final class SessionSummaryMonitor: ObservableObject {
 
     func startSession(sessionId: Int64) {
         currentSessionId = sessionId
+        sessionStartedAt = Date()
         summary = nil
         lastGeneratedAt = .distantPast
         wordsSinceLastGenerate = 0
@@ -64,7 +66,11 @@ final class SessionSummaryMonitor: ObservableObject {
             ? LiveTranscriptMonitor.shared.savedSegments
             : LiveTranscriptMonitor.shared.segments
         let transcript = fullTranscript(from: segments)
-        let scenarioId = CopilotSettings.shared.scenario.id
+        let scenario = CopilotSettings.shared.scenario
+        let scenarioId = scenario.id
+        let scenarioName = scenario.displayName
+        let exportMarkdownFile = CopilotSettings.shared.exportMeetingMarkdown
+        let startedAt = sessionStartedAt
         let client = try? cachedGeminiClient()
         Task {
             var markdown = fallbackMarkdown
@@ -88,6 +94,16 @@ final class SessionSummaryMonitor: ObservableObject {
                     sessionId: sessionId, text: markdown, isAiGenerated: true, segmentStartOrder: 0)
             } catch {
                 logError("SessionSummaryMonitor: failed to persist final summary", error: error)
+            }
+            if exportMarkdownFile {
+                MeetingMarkdownExporter.export(
+                    title: "\(scenarioName) — \(finalSummary.overview.prefix(60))",
+                    startedAt: startedAt,
+                    scenarioName: scenarioName,
+                    sessionId: sessionId,
+                    segments: segments,
+                    notesMarkdown: markdown
+                )
             }
             PostHogManager.shared.track(
                 "copilot_session_summary_saved",

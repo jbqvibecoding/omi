@@ -46,6 +46,12 @@ extension SettingsContentView {
                         ) { CopilotSettings.shared.autoDetectMeetings = $0 }
 
                         copilotSubToggle(
+                            title: "Export meetings as markdown",
+                            subtitle: "Saves minutes + transcript to ~/Documents/Omi/Meetings after each session.",
+                            isOn: $copilotExportMarkdown
+                        ) { CopilotSettings.shared.exportMeetingMarkdown = $0 }
+
+                        copilotSubToggle(
                             title: "Learn from my feedback",
                             subtitle: "Suggestion types you dismiss get quieter; ones you act on come readily.",
                             isOn: $copilotAdaptiveEnabled

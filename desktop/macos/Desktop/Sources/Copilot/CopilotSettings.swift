@@ -18,6 +18,7 @@ class CopilotSettings {
     private let notesFolderPathKey = "copilotNotesFolderPath"
     private let notesRagEnabledKey = "copilotNotesRagEnabled"
     private let autoDetectMeetingsKey = "copilotAutoDetectMeetings"
+    private let exportMeetingMarkdownKey = "copilotExportMeetingMarkdown"
 
     // MARK: - Default Values
 
@@ -155,6 +156,16 @@ class CopilotSettings {
         get { UserDefaults.standard.bool(forKey: autoDetectMeetingsKey) }
         set {
             UserDefaults.standard.set(newValue, forKey: autoDetectMeetingsKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Whether each finished session is also exported as a markdown file
+    /// (minutes + timestamped transcript) under ~/Documents/Omi/Meetings.
+    var exportMeetingMarkdown: Bool {
+        get { UserDefaults.standard.bool(forKey: exportMeetingMarkdownKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: exportMeetingMarkdownKey)
             NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
         }
     }
