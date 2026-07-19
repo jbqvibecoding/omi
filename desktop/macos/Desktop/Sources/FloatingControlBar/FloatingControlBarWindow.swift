@@ -3286,15 +3286,46 @@ class FloatingControlBarManager {
     }
 
     /// Present a pre-generated Copilot Snap answer in the floating bar's response surface.
-    func presentCopilotResponse(headline: String, markdown: String) {
+    /// When `artifact` is set (a converted payload — LaTeX, a Markdown table, a #RRGGBB
+    /// list, a translation, or recognized text), it's appended in a copyable form so the
+    /// user can grab it directly.
+    func presentCopilotResponse(
+        headline: String, markdown: String, artifact: String? = nil, artifactKind: String? = nil
+    ) {
         guard let window = window else { return }
-        let text = headline.isEmpty ? markdown : "**\(headline)**\n\n\(markdown)"
+        var text = headline.isEmpty ? markdown : "**\(headline)**\n\n\(markdown)"
+        if let artifact, !artifact.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            text += "\n\n" + Self.renderSnapArtifact(artifact, kind: artifactKind)
+        }
         let message = ChatMessage(text: text, sender: .ai)
         completeVisibleAgentResponse(
             userText: "✦ Copilot",
             assistantMessage: message,
             barWindow: window
         )
+    }
+
+    /// Wraps a snap artifact for MarkdownUI: fenced code (copyable) for LaTeX / colors /
+    /// recognized text, raw Markdown for tables (so the table renders), a blockquote for
+    /// translations.
+    private static func renderSnapArtifact(_ artifact: String, kind: String?) -> String {
+        let trimmed = artifact.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch kind {
+        case "formula":
+            return "```latex\n\(trimmed)\n```"
+        case "table":
+            // Already GitHub-Markdown; MarkdownUI renders it as a table.
+            return trimmed
+        case "color":
+            return "```\n\(trimmed)\n```"
+        case "translation":
+            return trimmed.split(separator: "\n", omittingEmptySubsequences: false)
+                .map { "> \($0)" }.joined(separator: "\n")
+        case "text":
+            return "```\n\(trimmed)\n```"
+        default:
+            return trimmed
+        }
     }
 
     private func dispatchPendingQueryIfNeeded(

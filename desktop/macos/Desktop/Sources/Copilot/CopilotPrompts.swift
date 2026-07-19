@@ -27,6 +27,23 @@ enum CopilotPrompts {
         for scannability. No greetings, no preamble.
         - headline is a max-8-word summary of your answer.
         - confidence is 0.0-1.0: how sure you are this is what the user needed.
+
+        Content extraction: if the screenshot's MAIN content is one of the following, the \
+        user most likely wants the converted artifact, not advice. Set content_type and put \
+        the converted form in `artifact` (verbatim, no extra prose):
+        - a mathematical formula → content_type "formula", artifact = the LaTeX code for it \
+        only (no fences, no description).
+        - a data table → content_type "table", artifact = the table as GitHub-flavored \
+        Markdown.
+        - a color palette or swatches → content_type "color", artifact = the predominant \
+        colors as #RRGGBB, one per line.
+        - a passage in a language the user likely does not read → content_type \
+        "translation", artifact = a faithful translation into the user's language.
+        - dense text the user probably wants to copy but can't select → content_type \
+        "text", artifact = the exact recognized text only.
+        Otherwise set content_type "general" and leave artifact empty. When you fill \
+        artifact, shrink response_markdown to a one-line note of what you extracted — the \
+        artifact is the payload. Only ONE dominant type; when unsure, prefer "general".
         """
 
     /// Structured output schema for the snap call.
@@ -37,6 +54,13 @@ enum CopilotPrompts {
             "headline": .init(type: "string", enum: nil, description: "Max 8 words summarizing the answer"),
             "response_markdown": .init(type: "string", enum: nil, description: "The direct answer, markdown, under 120 words"),
             "confidence": .init(type: "number", enum: nil, description: "0.0-1.0 confidence that this is what the user needed"),
+            "content_type": .init(
+                type: "string",
+                enum: ["formula", "table", "color", "translation", "text", "general"],
+                description: "Kind of dominant content extracted; 'general' when none dominates"),
+            "artifact": .init(
+                type: "string", enum: nil,
+                description: "Converted payload for content_type (LaTeX / Markdown table / #RRGGBB list / translation / recognized text); empty for 'general'"),
         ],
         required: ["intent_guess", "headline", "response_markdown", "confidence"]
     )
@@ -337,11 +361,28 @@ struct CopilotSnapResult: Decodable {
     let headline: String
     let responseMarkdown: String
     let confidence: Double
+    /// Dominant convertible content type (formula/table/color/translation/text), or
+    /// "general"/nil when the answer is the conversational predictive response.
+    let contentType: String?
+    /// The converted payload for `contentType` (bare LaTeX, Markdown table, #RRGGBB list,
+    /// translation, or recognized text). nil/empty for the general path.
+    let artifact: String?
 
     enum CodingKeys: String, CodingKey {
         case intentGuess = "intent_guess"
         case headline
         case responseMarkdown = "response_markdown"
         case confidence
+        case contentType = "content_type"
+        case artifact
+    }
+
+    /// The extracted artifact, only when it's a real convertible payload.
+    var usableArtifact: String? {
+        guard let artifact = artifact?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !artifact.isEmpty,
+            let contentType, contentType != "general"
+        else { return nil }
+        return artifact
     }
 }

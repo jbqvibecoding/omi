@@ -231,13 +231,18 @@ final class CopilotOrchestrator {
             let result = try JSONDecoder().decode(CopilotSnapResult.self, from: Data(responseText.utf8))
 
             lastSnapResult = result
+            let artifact = result.usableArtifact
             FloatingControlBarManager.shared.presentCopilotResponse(
                 headline: result.headline,
-                markdown: result.responseMarkdown
+                markdown: result.responseMarkdown,
+                artifact: artifact,
+                artifactKind: result.contentType
             )
 
             let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1000)
-            log("CopilotOrchestrator: snap done in \(elapsedMs)ms (confidence \(result.confidence))")
+            log(
+                "CopilotOrchestrator: snap done in \(elapsedMs)ms (confidence \(result.confidence), "
+                    + "content_type \(result.contentType ?? "general"))")
             PostHogManager.shared.track(
                 "copilot_snap_triggered",
                 properties: [
@@ -245,6 +250,8 @@ final class CopilotOrchestrator {
                     "elapsed_ms": elapsedMs,
                     "confidence": result.confidence,
                     "had_transcript": !context.transcriptWindow.isEmpty,
+                    "content_type": result.contentType ?? "general",
+                    "has_artifact": artifact != nil,
                 ]
             )
             persist(result: result, context: context)
@@ -253,6 +260,8 @@ final class CopilotOrchestrator {
                 "headline": result.headline,
                 "confidence": String(format: "%.2f", result.confidence),
                 "elapsed_ms": String(elapsedMs),
+                "content_type": result.contentType ?? "general",
+                "artifact_len": String(artifact?.count ?? 0),
             ]
         } catch {
             logError("CopilotOrchestrator: snap failed", error: error)
