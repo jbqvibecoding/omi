@@ -25,6 +25,9 @@ final class CopilotOrchestrator {
         // Watch for conferencing calls while idle and offer to start the copilot.
         MeetingAutoDetectMonitor.shared.start()
 
+        // Boot user-defined watcher agents (each runs its own loop when enabled).
+        WatcherRuntime.shared.start()
+
         DesktopAutomationActionRegistry.shared.register(
             name: "copilot_snap",
             summary: "Trigger a Copilot Snap (screenshot + context → predictive answer in the floating bar); "
