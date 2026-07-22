@@ -97,6 +97,8 @@ struct WatcherEditorView: View {
     @State private var conditionType: String
     @State private var conditionKeyword: String
     @State private var actions: [EditableAction]
+    @State private var backendKind: WatcherBackendKind
+    @State private var modelId: String
     @State private var describeText: String = ""
     @State private var isGenerating = false
     @State private var generationError: String?
@@ -122,6 +124,8 @@ struct WatcherEditorView: View {
             _conditionKeyword = State(initialValue: "")
         }
         _actions = State(initialValue: (existing?.actions ?? []).map(EditableAction.init(from:)))
+        _backendKind = State(initialValue: existing?.effectiveBackend ?? .gemini)
+        _modelId = State(initialValue: existing?.modelId ?? "")
     }
 
     var body: some View {
@@ -173,6 +177,18 @@ struct WatcherEditorView: View {
                     }
                     Toggle("Only when the screen changes", isOn: $onlyOnChange)
                         .scaledFont(size: 13).foregroundColor(OmiColors.textPrimary)
+                }
+
+                field("Model") {
+                    HStack {
+                        Picker("", selection: $backendKind) {
+                            Text("Omi (cloud)").tag(WatcherBackendKind.gemini)
+                            Text("Ollama (local)").tag(WatcherBackendKind.ollama)
+                        }.pickerStyle(.menu).frame(width: 150)
+                        if backendKind == .ollama {
+                            TextField("model, e.g. gemma3", text: $modelId).textFieldStyle(.roundedBorder)
+                        }
+                    }
                 }
 
                 field("Act when the response…") {
@@ -272,7 +288,9 @@ struct WatcherEditorView: View {
             onlyOnSignificantChange: onlyOnChange,
             condition: buildCondition(),
             actions: actions.map { $0.toAction() },
-            isEnabled: existing?.isEnabled ?? false)
+            isEnabled: existing?.isEnabled ?? false,
+            backend: backendKind,
+            modelId: backendKind == .ollama ? modelId.trimmingCharacters(in: .whitespaces) : nil)
         WatcherStore.shared.upsert(watcher)
         onDismiss()
     }

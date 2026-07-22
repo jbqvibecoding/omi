@@ -18,20 +18,7 @@ final class WatcherRuntime {
     }
 
     private var loops: [String: LoopState] = [:]
-    private var geminiClient: GeminiClient?
     private var started = false
-
-    private static let outputSchema = GeminiRequest.GenerationConfig.ResponseSchema(
-        type: "object",
-        properties: [
-            "output": .init(
-                type: "string", enum: nil,
-                description: "Your full response for this observation.")
-        ],
-        required: ["output"]
-    )
-
-    private struct WatcherOutput: Decodable { let output: String }
 
     private init() {}
 
@@ -122,7 +109,7 @@ final class WatcherRuntime {
             reused = true
         } else {
             do {
-                response = try await callModel(prompt: resolved.text, image: resolved.images.first)
+                response = try await callModel(watcher: watcher, prompt: resolved.text, images: resolved.images)
             } catch {
                 logError("WatcherRuntime: model call failed for \(watcher.id)", error: error)
                 return ["error": error.localizedDescription]
@@ -154,21 +141,13 @@ final class WatcherRuntime {
         ]
     }
 
-    private func callModel(prompt: String, image: Data?) async throws -> String {
-        let client = try cachedGeminiClient()
+    private func callModel(watcher: WatcherAgent, prompt: String, images: [Data]) async throws -> String {
         let systemPrompt =
             "You are a watcher agent. Follow the user's instruction below and respond concisely. "
             + "Your response is evaluated by a rule to decide whether to act."
-        if let image {
-            let json = try await client.sendRequest(
-                prompt: prompt, imageData: image, systemPrompt: systemPrompt,
-                responseSchema: Self.outputSchema, thinkingBudget: 0)
-            let parsed = try JSONDecoder().decode(WatcherOutput.self, from: Data(json.utf8))
-            return parsed.output
-        } else {
-            return try await client.sendTextRequest(
-                prompt: prompt, systemPrompt: systemPrompt, maxRetries: 1, timeout: 60, thinkingBudget: 0)
-        }
+        let backend = WatcherInferenceBackendFactory.make(for: watcher)
+        return try await backend.complete(
+            systemPrompt: systemPrompt, userPrompt: prompt, images: images)
     }
 
     // MARK: - Actions
@@ -215,13 +194,6 @@ final class WatcherRuntime {
             loops[watcher.id]?.sleepUntil = Date().addingTimeInterval(TimeInterval(seconds))
             return "sleep:\(seconds)s"
         }
-    }
-
-    private func cachedGeminiClient() throws -> GeminiClient {
-        if let geminiClient { return geminiClient }
-        let client = try GeminiClient(model: ModelQoS.Gemini.proactive, fallbackModel: "gemini-2.5-flash")
-        geminiClient = client
-        return client
     }
 
     // MARK: - Debug (omi-ctl)

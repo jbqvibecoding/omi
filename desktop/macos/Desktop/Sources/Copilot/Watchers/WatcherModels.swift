@@ -20,11 +20,17 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
     /// Actions to run in order when `condition` passes.
     var actions: [WatcherAction]
     var isEnabled: Bool
+    /// Inference backend (nil = cloud Gemini default). Optional so older stored watchers decode.
+    var backend: WatcherBackendKind?
+    /// Model id for the chosen backend (e.g. an Ollama model like "gemma3"); nil = default.
+    var modelId: String?
 
     static let minLoopIntervalSeconds = 15
     static let defaultLoopIntervalSeconds = 60
 
     var effectiveInterval: Int { max(Self.minLoopIntervalSeconds, loopIntervalSeconds) }
+    var effectiveBackend: WatcherBackendKind { backend ?? .gemini }
+    var effectiveModelId: String? { modelId?.isEmpty == false ? modelId : nil }
 
     init(
         id: String = "watcher_\(UUID().uuidString.prefix(8))",
@@ -34,7 +40,9 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
         onlyOnSignificantChange: Bool = true,
         condition: WatcherCondition = .always,
         actions: [WatcherAction] = [],
-        isEnabled: Bool = false
+        isEnabled: Bool = false,
+        backend: WatcherBackendKind? = nil,
+        modelId: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -44,7 +52,37 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
         self.condition = condition
         self.actions = actions
         self.isEnabled = isEnabled
+        self.backend = backend
+        self.modelId = modelId
     }
+
+    // Explicit Codable so adding fields never breaks decoding of previously stored watchers
+    // (Swift's synthesized decode does not apply property defaults on missing keys).
+    enum CodingKeys: String, CodingKey {
+        case id, name, systemPrompt, loopIntervalSeconds, onlyOnSignificantChange
+        case condition, actions, isEnabled, backend, modelId
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = (try? c.decode(String.self, forKey: .name)) ?? "Watcher"
+        systemPrompt = (try? c.decode(String.self, forKey: .systemPrompt)) ?? ""
+        loopIntervalSeconds =
+            (try? c.decode(Int.self, forKey: .loopIntervalSeconds)) ?? Self.defaultLoopIntervalSeconds
+        onlyOnSignificantChange = (try? c.decode(Bool.self, forKey: .onlyOnSignificantChange)) ?? true
+        condition = (try? c.decode(WatcherCondition.self, forKey: .condition)) ?? .always
+        actions = (try? c.decode([WatcherAction].self, forKey: .actions)) ?? []
+        isEnabled = (try? c.decode(Bool.self, forKey: .isEnabled)) ?? false
+        backend = try? c.decodeIfPresent(WatcherBackendKind.self, forKey: .backend)
+        modelId = try? c.decodeIfPresent(String.self, forKey: .modelId)
+    }
+}
+
+/// Which inference backend runs a watcher's model call.
+enum WatcherBackendKind: String, Codable, CaseIterable {
+    case gemini
+    case ollama
 }
 
 /// Declarative gate on the model response (replaces Observer's `if(response.includes(...))`).
