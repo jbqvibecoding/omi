@@ -392,6 +392,7 @@ pytest tests/unit/test_webhook_auto_disable.py -v
 pytest tests/unit/test_merge_validation.py -v
 pytest tests/unit/test_phone_calls.py -v
 pytest tests/unit/test_twilio_service.py -v
+pytest tests/unit/test_tools_messaging.py -v
 pytest tests/unit/test_twilio_account_deletion.py -v
 pytest tests/unit/test_phone_verification_created_at.py -v
 pytest tests/unit/test_conversation_search_date_validation.py -v
