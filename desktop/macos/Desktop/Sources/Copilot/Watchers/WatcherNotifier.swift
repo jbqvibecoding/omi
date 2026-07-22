@@ -31,6 +31,53 @@ enum WatcherNotifier {
             let appToken = await MainActor.run { WatcherChannelSettings.shared.pushoverAppToken }
             guard !appToken.isEmpty else { return Result(ok: false, detail: "pushover app token not set") }
             return await sendPushover(appToken: appToken, userKey: target, message: text)
+        case .sms:
+            return await sendViaBackend(path: "v1/tools/send-sms", body: ["to": target, "body": text])
+        case .whatsapp:
+            return await sendViaBackend(path: "v1/tools/send-whatsapp", body: ["to": target, "body": text])
+        case .call:
+            return await sendViaBackend(path: "v1/tools/call", body: ["to": target, "message": text])
+        }
+    }
+
+    // MARK: - Backend-routed channels (Twilio SMS / WhatsApp / call)
+
+    private static var backendBaseURL: String {
+        if let cString = getenv("OMI_DESKTOP_API_URL"), let url = String(validatingUTF8: cString), !url.isEmpty {
+            return url.hasSuffix("/") ? url : url + "/"
+        }
+        return "https://api.omi.me/"
+    }
+
+    private static func sendViaBackend(path: String, body: [String: String]) async -> Result {
+        guard let url = URL(string: "\(backendBaseURL)\(path)") else {
+            return Result(ok: false, detail: "bad backend url")
+        }
+        let authHeader: String
+        do {
+            authHeader = try await MainActor.run { AuthService.shared }.getAuthHeader()
+        } catch {
+            return Result(ok: false, detail: "auth unavailable")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(authHeader, forHTTPHeaderField: "Authorization")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            // The tools endpoints return a ToolResponse envelope with is_error.
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let isError = json["is_error"] as? Bool
+            {
+                let text = json["result_text"] as? String ?? ""
+                return Result(ok: !isError, detail: text.isEmpty ? "HTTP \(code)" : text)
+            }
+            return Result(ok: (200..<300).contains(code), detail: "HTTP \(code)")
+        } catch {
+            log("WatcherNotifier: backend send error: \(error.localizedDescription)")
+            return Result(ok: false, detail: error.localizedDescription)
         }
     }
 

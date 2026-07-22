@@ -144,11 +144,15 @@ enum WatcherCondition: Codable, Equatable {
     }
 }
 
-/// Outbound channels for `notifyChannel` (client-side direct integrations).
+/// Outbound channels for `notifyChannel`. Discord/Telegram/Pushover go direct from the
+/// client; SMS/WhatsApp/call route through the omi backend's Twilio tools.
 enum WatcherNotificationChannel: String, Codable, CaseIterable {
     case discord
     case telegram
     case pushover
+    case sms
+    case whatsapp
+    case call
 }
 
 /// Declarative action fired when a watcher's condition is met. Template strings support

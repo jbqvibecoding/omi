@@ -256,7 +256,7 @@ struct WatcherEditorView: View {
                 Picker("", selection: action.channel) {
                     ForEach(WatcherNotificationChannel.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }.pickerStyle(.menu).frame(width: 90)
-                TextField("target (webhook/chat id/user key)", text: action.target).textFieldStyle(.roundedBorder)
+                TextField("target (webhook / chat id / user key / +phone)", text: action.target).textFieldStyle(.roundedBorder)
                 TextField("message", text: action.text).textFieldStyle(.roundedBorder)
             case "startAgent", "stopAgent":
                 Picker("", selection: action.target) {
