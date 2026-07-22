@@ -101,7 +101,7 @@ struct WatcherEditorView: View {
     @State private var isGenerating = false
     @State private var generationError: String?
 
-    private let sensorTokens = ["$SCREEN", "$SCREEN_OCR", "$CLIPBOARD", "$MEMORY", "$ALL_AUDIO", "$TIME"]
+    private let sensorTokens = ["$SCREEN", "$SCREEN_OCR", "$CAMERA", "$CLIPBOARD", "$MEMORY", "$ALL_AUDIO", "$TIME"]
 
     init(existing: WatcherAgent?, onDismiss: @escaping () -> Void) {
         self.existing = existing

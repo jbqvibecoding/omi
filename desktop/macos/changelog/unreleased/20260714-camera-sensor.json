@@ -1,0 +1,3 @@
+{
+  "change": "Watcher agents can now observe your camera with the $CAMERA sensor (e.g. notify you when someone appears at your desk)"
+}

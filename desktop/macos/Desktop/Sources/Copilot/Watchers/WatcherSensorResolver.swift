@@ -12,8 +12,8 @@ import Foundation
 ///   $MEMORY / $MEMORY@id → the watcher's scratchpad (defaults to self)
 ///   $MICROPHONE        → recent mic transcript window
 ///   $ALL_AUDIO         → recent mixed mic+system transcript window
+///   $CAMERA            → one webcam frame (image side-channel)
 ///   $TIME              → current time
-/// ($CAMERA is intentionally not implemented — omi has no camera capture yet.)
 @MainActor
 enum WatcherSensorResolver {
     struct Resolved {
@@ -45,6 +45,14 @@ enum WatcherSensorResolver {
             }
         }
 
+        // Image sensor: $CAMERA (one webcam frame).
+        if text.contains("$CAMERA") {
+            if let raw = await CameraCaptureManager.captureCameraJPEG() {
+                images.append(GeminiImageCompression.compress(raw) ?? raw)
+            }
+            text = text.replacingOccurrences(of: "$CAMERA", with: "")
+        }
+
         // Text sensors.
         text = text.replacingOccurrences(of: "$SCREEN_OCR", with: snapshot?.recentOCR ?? "")
         text = text.replacingOccurrences(of: "$MICROPHONE", with: snapshot?.transcriptWindow ?? "")
@@ -63,7 +71,7 @@ enum WatcherSensorResolver {
 
     /// Which sensors a prompt references (for UI hints / diagnostics).
     static func referencedSensors(in prompt: String) -> [String] {
-        let all = ["$SCREEN_OCR", "$SCREEN", "$CLIPBOARD", "$MEMORY", "$MICROPHONE", "$ALL_AUDIO", "$TIME"]
+        let all = ["$SCREEN_OCR", "$SCREEN", "$CAMERA", "$CLIPBOARD", "$MEMORY", "$MICROPHONE", "$ALL_AUDIO", "$TIME"]
         var found: [String] = []
         for token in all {
             // Avoid double-counting $SCREEN inside $SCREEN_OCR.
