@@ -27,6 +27,8 @@ actor InsightAssistant: ProactiveAssistant {
     private let geminiClient: GeminiClient
     private var isRunning = false
     private var lastAnalysisTime: Date = .distantPast
+    /// Perceptual snapshot of the last frame we actually analyzed, for the change gate.
+    private var lastAnalyzedSnapshot: WatcherSensorSnapshot?
     private var previousInsights: [ExtractedInsight] = [] // Dedup window for insight context
     private let maxPreviousInsights = 50
     private let maxInsightsInPrompt = 30 // Only include first 30 in prompt to keep token count reasonable
@@ -432,6 +434,18 @@ actor InsightAssistant: ProactiveAssistant {
 
     private func processFrame(_ frame: CapturedFrame) async {
         guard await isEnabled else { return }
+
+        // Change gate: skip the whole extraction pipeline when the screen hasn't
+        // meaningfully changed since the last analyzed frame (perceptual-hash + title).
+        if await MainActor.run(body: { InsightAssistantSettings.shared.onlyOnSignificantChange }) {
+            let snapshot = PerceptualChangeDetector.snapshot(
+                text: frame.appName + (frame.windowTitle ?? ""), image: frame.jpegData)
+            if !PerceptualChangeDetector.isSignificant(previous: lastAnalyzedSnapshot, current: snapshot) {
+                return
+            }
+            lastAnalyzedSnapshot = snapshot
+        }
+
         do {
             guard let result = try await extractAdvice(from: frame) else {
                 return

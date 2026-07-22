@@ -171,6 +171,8 @@ struct SettingsContentView: View {
   @State var copilotAutoDetectMeetings: Bool
   @State var copilotExportMarkdown: Bool
   @State var showWatchersManager = false
+  @State var screenOpOnlyOnChange: Bool
+  @State var insightOnlyOnChange: Bool
 
   // Advice Assistant states
   @State var insightEnabled: Bool
@@ -454,6 +456,8 @@ struct SettingsContentView: View {
     _copilotNotesFolderPath = State(initialValue: CopilotSettings.shared.notesFolderPath ?? "")
     _copilotAutoDetectMeetings = State(initialValue: CopilotSettings.shared.autoDetectMeetings)
     _copilotExportMarkdown = State(initialValue: CopilotSettings.shared.exportMeetingMarkdown)
+    _screenOpOnlyOnChange = State(initialValue: ScreenOpAssistantSettings.shared.onlyOnSignificantChange)
+    _insightOnlyOnChange = State(initialValue: InsightAssistantSettings.shared.onlyOnSignificantChange)
     _insightEnabled = State(initialValue: InsightAssistantSettings.shared.isEnabled)
     _insightExtractionInterval = State(
       initialValue: InsightAssistantSettings.shared.extractionInterval)

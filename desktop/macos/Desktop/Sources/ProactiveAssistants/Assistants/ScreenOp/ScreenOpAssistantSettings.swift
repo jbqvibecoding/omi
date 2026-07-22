@@ -13,6 +13,7 @@ class ScreenOpAssistantSettings {
     private let minConfidenceKey = "screenOpMinConfidence"
     private let notificationsEnabledKey = "screenOpNotificationsEnabled"
     private let excludedAppsKey = "screenOpExcludedApps"
+    private let onlyOnSignificantChangeKey = "screenOpOnlyOnSignificantChange"
 
     // MARK: - Default Values
 
@@ -73,6 +74,7 @@ class ScreenOpAssistantSettings {
             extractionIntervalKey: defaultExtractionInterval,
             minConfidenceKey: defaultMinConfidence,
             notificationsEnabledKey: defaultNotificationsEnabled,
+            onlyOnSignificantChangeKey: true,
         ])
         migratePromptIfNeeded()
     }
@@ -138,6 +140,16 @@ class ScreenOpAssistantSettings {
         get { UserDefaults.standard.bool(forKey: notificationsEnabledKey) }
         set {
             UserDefaults.standard.set(newValue, forKey: notificationsEnabledKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Skip the analysis when the screen hasn't meaningfully changed since the last one
+    /// (perceptual-hash gate) — saves LLM calls while idle.
+    var onlyOnSignificantChange: Bool {
+        get { UserDefaults.standard.bool(forKey: onlyOnSignificantChangeKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: onlyOnSignificantChangeKey)
             NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
         }
     }

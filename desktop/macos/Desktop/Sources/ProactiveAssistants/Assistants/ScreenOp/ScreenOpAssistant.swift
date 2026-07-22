@@ -74,6 +74,8 @@ actor ScreenOpAssistant: ProactiveAssistant {
     private let geminiClient: GeminiClient
     private var isRunning = false
     private var lastAnalysisTime: Date = .distantPast
+    /// Perceptual snapshot of the last frame we actually analyzed, for the change gate.
+    private var lastAnalyzedSnapshot: WatcherSensorSnapshot?
     private var previousSuggestions: [String] = []
     private let maxPreviousSuggestions = 50
     private let maxSuggestionsInPrompt = 30
@@ -241,6 +243,18 @@ actor ScreenOpAssistant: ProactiveAssistant {
 
     private func processFrame(_ frame: CapturedFrame) async {
         guard await isEnabled else { return }
+
+        // Change gate: skip the whole extraction pipeline when the screen hasn't
+        // meaningfully changed since the last analyzed frame (perceptual-hash + title).
+        if await MainActor.run(body: { ScreenOpAssistantSettings.shared.onlyOnSignificantChange }) {
+            let snapshot = PerceptualChangeDetector.snapshot(
+                text: frame.appName + (frame.windowTitle ?? ""), image: frame.jpegData)
+            if !PerceptualChangeDetector.isSignificant(previous: lastAnalyzedSnapshot, current: snapshot) {
+                return
+            }
+            lastAnalyzedSnapshot = snapshot
+        }
+
         do {
             let (result, _) = try await runSuggestionExtraction(
                 appName: frame.appName,

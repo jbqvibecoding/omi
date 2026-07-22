@@ -147,12 +147,22 @@ extension SettingsContentView {
 
             // Screen-Op assist
             settingsCard(settingId: "copilot.screenop") {
-                copilotToggleRow(
-                    icon: "sparkle.magnifyingglass",
-                    title: "Screen help while you work",
-                    subtitle: "Suggests a fix when you look stuck (repeating errors, no progress).",
-                    isOn: $screenOpEnabled
-                ) { ScreenOpAssistantSettings.shared.isEnabled = $0 }
+                VStack(alignment: .leading, spacing: 16) {
+                    copilotToggleRow(
+                        icon: "sparkle.magnifyingglass",
+                        title: "Screen help while you work",
+                        subtitle: "Suggests a fix when you look stuck (repeating errors, no progress).",
+                        isOn: $screenOpEnabled
+                    ) { ScreenOpAssistantSettings.shared.isEnabled = $0 }
+
+                    if screenOpEnabled {
+                        copilotSubToggle(
+                            title: "Only analyze when the screen changes",
+                            subtitle: "Skips the AI call while your screen is idle — saves battery and cost.",
+                            isOn: $screenOpOnlyOnChange
+                        ) { ScreenOpAssistantSettings.shared.onlyOnSignificantChange = $0 }
+                    }
+                }
             }
 
             // Watchers (user-programmable proactive agents)

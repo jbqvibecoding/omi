@@ -85,6 +85,19 @@ extension SettingsContentView {
             }
 
             settingRow(
+              title: "Insight: only when the screen changes",
+              subtitle: "Skips the AI call while your screen is idle — saves battery and cost",
+              settingId: "notifications.insight.onlyOnChange"
+            ) {
+              Toggle("", isOn: $insightOnlyOnChange)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .onChange(of: insightOnlyOnChange) { _, newValue in
+                  InsightAssistantSettings.shared.onlyOnSignificantChange = newValue
+                }
+            }
+
+            settingRow(
               title: "Memory Notifications",
               subtitle: "Show notification when a memory is extracted",
               settingId: "notifications.memory"
