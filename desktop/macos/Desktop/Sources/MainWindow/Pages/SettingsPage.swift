@@ -170,6 +170,7 @@ struct SettingsContentView: View {
   @State var copilotNotesIndexStatus: String = ""
   @State var copilotAutoDetectMeetings: Bool
   @State var copilotExportMarkdown: Bool
+  @State var showWatchersManager = false
 
   // Advice Assistant states
   @State var insightEnabled: Bool

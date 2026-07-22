@@ -155,6 +155,25 @@ extension SettingsContentView {
                 ) { ScreenOpAssistantSettings.shared.isEnabled = $0 }
             }
 
+            // Watchers (user-programmable proactive agents)
+            settingsCard(settingId: "copilot.watchers") {
+                HStack {
+                    Image(systemName: "eye").scaledFont(size: 16).foregroundColor(OmiColors.textTertiary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Watchers").scaledFont(size: 16, weight: .semibold)
+                            .foregroundColor(OmiColors.textPrimary)
+                        Text("Build your own agents that watch your screen/audio and notify you — even on your phone.")
+                            .scaledFont(size: 13).foregroundColor(OmiColors.textSecondary)
+                    }
+                    Spacer()
+                    Button("Manage") { showWatchersManager = true }
+                        .buttonStyle(.plain).scaledFont(size: 13).foregroundColor(OmiColors.textSecondary)
+                }
+                .sheet(isPresented: $showWatchersManager) {
+                    WatchersManagerView { showWatchersManager = false }
+                }
+            }
+
             // Stealth
             settingsCard(settingId: "copilot.stealth") {
                 copilotToggleRow(
