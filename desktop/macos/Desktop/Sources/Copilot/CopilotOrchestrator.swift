@@ -122,6 +122,55 @@ final class CopilotOrchestrator {
         }
 
         DesktopAutomationActionRegistry.shared.register(
+            name: "watcher_list",
+            summary: "List user-defined watcher agents (id, name, enabled, interval)."
+        ) { _ in
+            let watchers = await MainActor.run { WatcherStore.shared.watchers }
+            if watchers.isEmpty { return ["count": "0"] }
+            var out: [String: String] = ["count": String(watchers.count)]
+            for w in watchers {
+                out[w.id] = "\(w.name) [\(w.isEnabled ? "on" : "off")] every \(w.effectiveInterval)s"
+            }
+            return out
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
+            name: "watcher_run",
+            summary: "Force one tick of a watcher (bypasses interval/change-gate/sleep); "
+                + "returns response, condition match, and actions run.",
+            params: ["id"]
+        ) { params in
+            guard let id = params["id"], !id.isEmpty else { return ["error": "missing id param"] }
+            return await WatcherRuntime.shared.forceRun(id: id)
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
+            name: "watcher_create_from",
+            summary: "Generate a watcher agent from a natural-language description and save it "
+                + "(disabled); returns the new watcher id and referenced sensors.",
+            params: ["desc"]
+        ) { params in
+            guard let desc = params["desc"], !desc.isEmpty else { return ["error": "missing desc param"] }
+            do {
+                let draft = try await WatcherAICreator.generate(description: desc)
+                let sensors = await MainActor.run { () -> String in
+                    WatcherStore.shared.upsert(draft)
+                    return WatcherSensorResolver.referencedSensors(in: draft.systemPrompt)
+                        .joined(separator: ",")
+                }
+                return [
+                    "id": draft.id,
+                    "name": draft.name,
+                    "interval": String(draft.effectiveInterval),
+                    "actions": String(draft.actions.count),
+                    "sensors": sensors,
+                ]
+            } catch {
+                return ["error": error.localizedDescription]
+            }
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
             name: "copilot_notes_index",
             summary: "Index (incrementally) the configured copilot notes folder into the notes "
                 + "knowledge base; returns scanned/embedded/reused/pruned counts."
