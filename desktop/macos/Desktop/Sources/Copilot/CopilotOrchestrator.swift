@@ -145,6 +145,16 @@ final class CopilotOrchestrator {
         }
 
         DesktopAutomationActionRegistry.shared.register(
+            name: "watcher_runs",
+            summary: "Print a watcher's recent run history (response head, acted/no-op, errors).",
+            params: ["id"]
+        ) { params in
+            guard let id = params["id"], !id.isEmpty else { return ["error": "missing id param"] }
+            let context = await MainActor.run { WatcherRunStore.shared.recentContext(watcherId: id) }
+            return ["runs": context]
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
             name: "watcher_create_from",
             summary: "Generate a watcher agent from a natural-language description and save it "
                 + "(disabled); returns the new watcher id and referenced sensors.",

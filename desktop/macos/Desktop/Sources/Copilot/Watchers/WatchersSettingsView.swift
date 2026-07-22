@@ -149,6 +149,13 @@ struct WatcherEditorView: View {
                     if let generationError {
                         Text(generationError).scaledFont(size: 11).foregroundColor(OmiColors.error)
                     }
+                    if existing != nil {
+                        Button(isGenerating ? "Improving…" : "Improve from recent runs") {
+                            Task { await improveFromRuns() }
+                        }
+                        .buttonStyle(.plain).scaledFont(size: 12).foregroundColor(OmiColors.textSecondary)
+                        .disabled(isGenerating)
+                    }
                 }
 
                 Divider().background(OmiColors.backgroundQuaternary)
@@ -238,6 +245,8 @@ struct WatcherEditorView: View {
                 Text("notify HUD").tag("notifyHUD")
                 Text("overlay").tag("overlay")
                 Text("notify channel").tag("notifyChannel")
+                Text("start agent").tag("startAgent")
+                Text("stop agent").tag("stopAgent")
                 Text("sleep").tag("sleep")
                 Text("stop self").tag("stopSelf")
             }.pickerStyle(.menu).frame(width: 130)
@@ -249,6 +258,13 @@ struct WatcherEditorView: View {
                 }.pickerStyle(.menu).frame(width: 90)
                 TextField("target (webhook/chat id/user key)", text: action.target).textFieldStyle(.roundedBorder)
                 TextField("message", text: action.text).textFieldStyle(.roundedBorder)
+            case "startAgent", "stopAgent":
+                Picker("", selection: action.target) {
+                    Text("(pick watcher)").tag("")
+                    ForEach(WatcherStore.shared.watchers.filter { $0.id != existing?.id }) { w in
+                        Text(w.name).tag(w.id)
+                    }
+                }.pickerStyle(.menu)
             case "sleep":
                 TextField("seconds", value: action.seconds, format: .number).textFieldStyle(.roundedBorder).frame(width: 80)
             case "stopSelf":
@@ -315,6 +331,29 @@ struct WatcherEditorView: View {
             generationError = "Couldn't generate — fill the fields manually."
         }
     }
+
+    private func improveFromRuns() async {
+        guard let existing else { return }
+        isGenerating = true
+        generationError = nil
+        defer { isGenerating = false }
+        do {
+            let improved = try await WatcherAICreator.improve(
+                existing: existing, instruction: describeText)
+            name = improved.name
+            systemPrompt = improved.systemPrompt
+            interval = improved.effectiveInterval
+            onlyOnChange = improved.onlyOnSignificantChange
+            switch improved.condition {
+            case let .responseContains(keyword, _): conditionType = "contains"; conditionKeyword = keyword
+            case let .responseMatches(regex): conditionType = "matches"; conditionKeyword = regex
+            default: conditionType = "always"; conditionKeyword = ""
+            }
+            actions = improved.actions.map(EditableAction.init(from:))
+        } catch {
+            generationError = "Couldn't improve — try editing manually."
+        }
+    }
 }
 
 /// Editable, flat mirror of a WatcherAction for the form.
@@ -337,6 +376,8 @@ struct EditableAction: Identifiable {
             type = "notifyChannel"; channel = ch; target = tgt; text = message
         case let .sleep(secs): type = "sleep"; seconds = secs
         case .stopSelf: type = "stopSelf"
+        case let .startAgent(watcherId): type = "startAgent"; target = watcherId
+        case let .stopAgent(watcherId): type = "stopAgent"; target = watcherId
         }
     }
 
@@ -345,6 +386,8 @@ struct EditableAction: Identifiable {
         case "appendMemory": return .appendMemory(template: text)
         case "overlay": return .overlay(body: text)
         case "notifyChannel": return .notifyChannel(channel: channel, target: target, message: text)
+        case "startAgent": return .startAgent(watcherId: target)
+        case "stopAgent": return .stopAgent(watcherId: target)
         case "sleep": return .sleep(seconds: seconds)
         case "stopSelf": return .stopSelf
         default: return .notifyHUD(title: "Watcher", message: text)

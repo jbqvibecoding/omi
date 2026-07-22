@@ -13,8 +13,10 @@ enum WatcherPrompts {
         Available SENSOR placeholders to embed in system_prompt (use only what's needed):
         - $SCREEN — a screenshot (use for anything visual).
         - $SCREEN_OCR — recent on-screen text (cheaper than $SCREEN when text is enough).
+        - $CAMERA — one webcam frame (use for the physical world in front of the user).
         - $CLIPBOARD — current clipboard text.
         - $MEMORY — this watcher's own notes from previous runs.
+        - $MEMORY@otherId — another watcher's notes (for multi-agent handoffs).
         - $MICROPHONE / $ALL_AUDIO — recent speech transcript.
         - $TIME — current time.
 
@@ -38,8 +40,34 @@ enum WatcherPrompts {
         - Keep the condition tight so actions fire only when they should.
         """
 
+    /// System prompt for improving an existing watcher from its recent runs (Observer @agent#N).
+    static let improveSystemPrompt = """
+        You improve an existing "watcher" agent. You are given its current configuration and a
+        log of its recent runs (the model's response and whether it acted). Diagnose why it
+        under- or over-fired and return an improved configuration in the same schema. Common
+        fixes: tighten or loosen the condition keyword, make the instruction demand a clearer
+        decidable reply, adjust the interval, or add a sleep after an outbound action. Keep the
+        same sensors unless they're the problem. Only return the improved config.
+        """
+
     static func generationUserPrompt(description: String) -> String {
         "Watcher to build: \(description)"
+    }
+
+    static func improveUserPrompt(current: WatcherAgent, recentRuns: String, instruction: String) -> String {
+        """
+        Current watcher:
+        - name: \(current.name)
+        - system_prompt: \(current.systemPrompt)
+        - loop_interval_seconds: \(current.effectiveInterval)
+        - condition: \(current.condition)
+        - actions: \(current.actions.count)
+
+        Recent runs (most recent last):
+        \(recentRuns)
+
+        Improvement request: \(instruction.isEmpty ? "Make it fire more accurately." : instruction)
+        """
     }
 
     static let generationSchema = GeminiRequest.GenerationConfig.ResponseSchema(
@@ -168,5 +196,27 @@ enum WatcherAICreator {
             thinkingBudget: 0)
         let draft = try JSONDecoder().decode(WatcherDraft.self, from: Data(json.utf8))
         return draft.toWatcher()
+    }
+
+    /// Improve an existing watcher using its recent run history (keeps id/enabled/backend).
+    static func improve(existing: WatcherAgent, instruction: String) async throws -> WatcherAgent {
+        let recentRuns = WatcherRunStore.shared.recentContext(watcherId: existing.id)
+        let client = try GeminiClient(model: ModelQoS.Gemini.proactive, fallbackModel: "gemini-2.5-flash")
+        let json = try await client.sendRequest(
+            prompt: WatcherPrompts.improveUserPrompt(
+                current: existing, recentRuns: recentRuns, instruction: instruction),
+            systemPrompt: WatcherPrompts.improveSystemPrompt,
+            responseSchema: WatcherPrompts.generationSchema,
+            thinkingBudget: 0)
+        let draft = try JSONDecoder().decode(WatcherDraft.self, from: Data(json.utf8))
+        var improved = draft.toWatcher()
+        // Preserve identity + runtime state so the same watcher is updated in place.
+        improved = WatcherAgent(
+            id: existing.id, name: improved.name, systemPrompt: improved.systemPrompt,
+            loopIntervalSeconds: improved.loopIntervalSeconds,
+            onlyOnSignificantChange: improved.onlyOnSignificantChange,
+            condition: improved.condition, actions: improved.actions,
+            isEnabled: existing.isEnabled, backend: existing.backend, modelId: existing.modelId)
+        return improved
     }
 }

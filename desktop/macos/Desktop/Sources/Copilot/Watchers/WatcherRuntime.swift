@@ -129,6 +129,12 @@ final class WatcherRuntime {
             }
         }
 
+        WatcherRunStore.shared.record(
+            WatcherRun(
+                watcherId: watcher.id, at: Date(), responseHead: String(response.prefix(120)),
+                reused: reused, conditionMet: conditionMet,
+                actions: actionsRun.joined(separator: ","), error: nil))
+
         log(
             "WatcherRuntime: tick \(watcher.id) — reused=\(reused) condition=\(conditionMet) "
                 + "actions=\(actionsRun.joined(separator: ","))")
@@ -193,6 +199,16 @@ final class WatcherRuntime {
         case let .sleep(seconds):
             loops[watcher.id]?.sleepUntil = Date().addingTimeInterval(TimeInterval(seconds))
             return "sleep:\(seconds)s"
+
+        case let .startAgent(watcherId):
+            // Hand off to another watcher — enabling it lets reconcile() start its loop;
+            // it reads this watcher's output via $MEMORY@<thisId>.
+            WatcherStore.shared.setEnabled(id: watcherId, true)
+            return "startAgent:\(watcherId)"
+
+        case let .stopAgent(watcherId):
+            WatcherStore.shared.setEnabled(id: watcherId, false)
+            return "stopAgent:\(watcherId)"
         }
     }
 

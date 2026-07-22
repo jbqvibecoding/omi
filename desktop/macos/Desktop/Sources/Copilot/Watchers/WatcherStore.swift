@@ -45,6 +45,7 @@ final class WatcherStore: ObservableObject {
     func delete(id: String) {
         watchers.removeAll { $0.id == id }
         WatcherMemoryStore.shared.clear(watcherId: id)
+        WatcherRunStore.shared.clear(watcherId: id)
         persist()
     }
 

@@ -166,9 +166,13 @@ enum WatcherAction: Codable, Equatable {
     case stopSelf
     /// Suppress this watcher for N seconds (self-throttle, avoids notification spam).
     case sleep(seconds: Int)
+    /// Enable another watcher (hand off work — it reads this one's memory via $MEMORY@id).
+    case startAgent(watcherId: String)
+    /// Disable another watcher.
+    case stopAgent(watcherId: String)
 
     private enum CodingKeys: String, CodingKey {
-        case type, template, title, message, channel, target, body, seconds
+        case type, template, title, message, channel, target, body, seconds, watcherId
     }
 
     func encode(to encoder: Encoder) throws {
@@ -194,6 +198,12 @@ enum WatcherAction: Codable, Equatable {
         case let .sleep(seconds):
             try c.encode("sleep", forKey: .type)
             try c.encode(seconds, forKey: .seconds)
+        case let .startAgent(watcherId):
+            try c.encode("startAgent", forKey: .type)
+            try c.encode(watcherId, forKey: .watcherId)
+        case let .stopAgent(watcherId):
+            try c.encode("stopAgent", forKey: .type)
+            try c.encode(watcherId, forKey: .watcherId)
         }
     }
 
@@ -215,6 +225,10 @@ enum WatcherAction: Codable, Equatable {
             self = .overlay(body: (try? c.decode(String.self, forKey: .body)) ?? "$RESPONSE")
         case "sleep":
             self = .sleep(seconds: (try? c.decode(Int.self, forKey: .seconds)) ?? 600)
+        case "startAgent":
+            self = .startAgent(watcherId: (try? c.decode(String.self, forKey: .watcherId)) ?? "")
+        case "stopAgent":
+            self = .stopAgent(watcherId: (try? c.decode(String.self, forKey: .watcherId)) ?? "")
         default:
             self = .stopSelf
         }
