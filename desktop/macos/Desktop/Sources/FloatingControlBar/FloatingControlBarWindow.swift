@@ -3396,6 +3396,11 @@ class FloatingControlBarManager {
             bucket: notification.context?.feedbackBucket,
             outcome: .accepted
         )
+        CopilotCorrectionLog.shared.recordCardOutcome(
+            notificationId: notification.id,
+            bucket: notification.context?.feedbackBucket,
+            situation: notification.context?.contextSummary ?? notification.message,
+            accepted: true)
 
         notificationDismissWorkItem?.cancel()
         notificationDismissWorkItem = nil
@@ -3457,6 +3462,12 @@ class FloatingControlBarManager {
                 outcome: .ignored,
                 suggestionText: dismissedNotification.message
             )
+            CopilotCorrectionLog.shared.recordCardOutcome(
+                notificationId: dismissedNotification.id,
+                bucket: dismissedNotification.context?.feedbackBucket,
+                situation: dismissedNotification.context?.contextSummary
+                    ?? dismissedNotification.message,
+                accepted: false)
         }
 
         if !pendingNotifications.isEmpty, !window.state.showingAIConversation {

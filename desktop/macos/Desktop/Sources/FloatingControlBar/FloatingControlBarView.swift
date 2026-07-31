@@ -927,6 +927,11 @@ struct FloatingControlBarView: View {
                         CopilotFeedbackTuner.shared.record(
                             notificationId: notification.id,
                             bucket: notification.context?.feedbackBucket, outcome: .accepted)
+                        CopilotCorrectionLog.shared.recordCardOutcome(
+                            notificationId: notification.id,
+                            bucket: notification.context?.feedbackBucket,
+                            situation: notification.context?.contextSummary ?? notification.message,
+                            accepted: true)
                         FloatingControlBarManager.shared.dismissCurrentNotification()
                     } label: {
                         HStack(spacing: 4) {
@@ -964,6 +969,11 @@ struct FloatingControlBarView: View {
                         CopilotFeedbackTuner.shared.record(
                             notificationId: notification.id,
                             bucket: notification.context?.feedbackBucket, outcome: .accepted)
+                        CopilotCorrectionLog.shared.recordCardOutcome(
+                            notificationId: notification.id,
+                            bucket: notification.context?.feedbackBucket,
+                            situation: notification.context?.contextSummary ?? notification.message,
+                            accepted: true)
                         FloatingControlBarManager.shared.dismissCurrentNotification()
                     } label: {
                         HStack(spacing: 4) {

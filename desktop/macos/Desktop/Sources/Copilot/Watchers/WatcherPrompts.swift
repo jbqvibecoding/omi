@@ -50,8 +50,15 @@ enum WatcherPrompts {
         same sensors unless they're the problem. Only return the improved config.
         """
 
+    @MainActor
     static func generationUserPrompt(description: String) -> String {
-        "Watcher to build: \(description)"
+        var out = "Watcher to build: \(description)"
+        // The same learned preferences that govern live suggestions — a watcher the user
+        // builds should start out already knowing how they like to be interrupted.
+        if let preferences = CopilotCorrectionLog.shared.promptBlock() {
+            out += "\n\n\(preferences)"
+        }
+        return out
     }
 
     static func improveUserPrompt(current: WatcherAgent, recentRuns: String, instruction: String) -> String {

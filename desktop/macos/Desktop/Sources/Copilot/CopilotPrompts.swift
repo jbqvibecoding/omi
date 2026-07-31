@@ -135,9 +135,11 @@ extension CopilotPrompts {
         transcript: String,
         recentSuggestions: [String],
         scenario: CopilotScenarioProfile,
-        notesEvidence: String? = nil
+        notesEvidence: String? = nil,
+        preferences: String? = nil
     ) -> String {
         var sections = [scenario.systemPromptBlock]
+        if let preferences, !preferences.isEmpty { sections.append(preferences) }
         if !recentSuggestions.isEmpty {
             sections.append(
                 "Suggestions already given (do not repeat):\n"
@@ -192,9 +194,11 @@ extension CopilotPrompts {
         recentSuggestions: [String],
         userProfile: String?,
         notesEvidence: String? = nil,
-        styleCard: String? = nil
+        styleCard: String? = nil,
+        preferences: String? = nil
     ) -> String {
         var sections: [String] = ["Trigger type: \(gateType)"]
+        if let preferences, !preferences.isEmpty { sections.append(preferences) }
         if !recentSuggestions.isEmpty {
             sections.append(
                 "Suggestions already given (do not repeat):\n"

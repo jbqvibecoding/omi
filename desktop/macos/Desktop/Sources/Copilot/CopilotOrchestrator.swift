@@ -266,6 +266,21 @@ final class CopilotOrchestrator {
         }
 
         DesktopAutomationActionRegistry.shared.register(
+            name: "copilot_rules_dump",
+            summary: "Show the plain-English preferences omi distilled from the times you "
+                + "disagreed with it, and where the editable file lives."
+        ) { _ in
+            await MainActor.run { CopilotCorrectionLog.shared.debugDump() }
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
+            name: "copilot_rules_distill",
+            summary: "Re-distill the preference rules from the correction log right now."
+        ) { _ in
+            await CopilotCorrectionLog.shared.debugDistill()
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
             name: "copilot_style_dump",
             summary: "Show the learned style card omi uses to make talk tracks sound like you, "
                 + "plus how much of your own speech it learned from."

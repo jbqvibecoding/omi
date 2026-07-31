@@ -335,6 +335,11 @@ final class LiveSuggestionsMonitor: ObservableObject {
                 .joined(separator: "\n\n")
         }
 
+        // Rules the user taught omi by disagreeing with it. Injected into both stages,
+        // ahead of the general guidance, because a preference the gate ignores is a
+        // preference the user has to keep re-teaching.
+        let preferences = CopilotCorrectionLog.shared.promptBlock()
+
         do {
             let client = try cachedGeminiClient()
 
@@ -349,7 +354,8 @@ final class LiveSuggestionsMonitor: ObservableObject {
                     transcript: transcript,
                     recentSuggestions: suggestionsThisSession + suppressed,
                     scenario: scenario,
-                    notesEvidence: notesEvidence
+                    notesEvidence: notesEvidence,
+                    preferences: preferences
                 ),
                 systemPrompt: CopilotPrompts.liveGateSystemPrompt,
                 maxRetries: 0,
@@ -378,7 +384,8 @@ final class LiveSuggestionsMonitor: ObservableObject {
                 recentSuggestions: suggestionsThisSession,
                 userProfile: profile,
                 notesEvidence: notesEvidence,
-                styleCard: CopilotStyleLearner.shared.card
+                styleCard: CopilotStyleLearner.shared.card,
+                preferences: preferences
             )
             let generateSystemPrompt = CopilotPrompts.liveSuggestionSystemPrompt(scenario: scenario)
             let responseText = try await withThrowingTimeoutCopilot(seconds: generateTimeout) {

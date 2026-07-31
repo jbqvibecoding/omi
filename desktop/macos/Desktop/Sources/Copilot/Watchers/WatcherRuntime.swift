@@ -343,6 +343,12 @@ final class WatcherRuntime {
             log("WatcherRuntime: approval timed out for \(watcher.id) — not sent")
             return "approval:timeout"
         default:
+            // A refused send is the clearest preference signal there is: the watcher was
+            // sure enough to draft it and the user said no.
+            CopilotCorrectionLog.shared.record(
+                scenario: "watcher", type: "send:\(channel.rawValue)",
+                situation: "\(watcher.name) drafted: \(String(item.body.prefix(240)))",
+                agentVerdict: "worth sending", userVerdict: "not worth sending")
             return "approval:denied"
         }
     }

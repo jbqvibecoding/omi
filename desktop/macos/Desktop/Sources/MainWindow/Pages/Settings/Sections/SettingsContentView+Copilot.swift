@@ -92,16 +92,8 @@ extension SettingsContentView {
                             isOn: $copilotAdaptiveEnabled
                         ) { CopilotSettings.shared.adaptiveThresholdEnabled = $0 }
 
-                        if copilotAdaptiveEnabled && !CopilotFeedbackTuner.shared.adaptationSummary().isEmpty {
-                            VStack(alignment: .leading, spacing: 4) {
-                                ForEach(CopilotFeedbackTuner.shared.adaptationSummary(), id: \.bucket) { item in
-                                    Text("· \(item.bucket): \(item.direction)")
-                                        .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
-                                }
-                                Button("Reset learning") { CopilotFeedbackTuner.shared.reset() }
-                                    .scaledFont(size: 12).buttonStyle(.plain)
-                                    .foregroundColor(OmiColors.textSecondary)
-                            }
+                        if copilotAdaptiveEnabled {
+                            CopilotPreferencesRow()
                         }
                     }
                 }
@@ -270,6 +262,97 @@ extension SettingsContentView {
             Spacer()
             Toggle("", isOn: isOn).toggleStyle(.switch).labelsHidden()
                 .onChange(of: isOn.wrappedValue) { _, v in onChange(v) }
+        }
+    }
+}
+
+/// What omi has learned about when to speak up, in words rather than a hidden threshold.
+/// Editable, because the fastest way to fix a wrong rule is to delete the line.
+private struct CopilotPreferencesRow: View {
+    @State private var rulesText = ""
+    @State private var rules: [String] = []
+    @State private var correctionCount = 0
+    @State private var isDistilling = false
+    @State private var isEditing = false
+    @State private var status = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("What omi has learned").scaledFont(size: 13)
+                        .foregroundColor(OmiColors.textSecondary)
+                    Text(subtitle).scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+                }
+                Spacer()
+                if !rules.isEmpty {
+                    Button(isEditing ? "Done" : "Edit") {
+                        if isEditing { CopilotCorrectionLog.shared.setRulesText(rulesText) }
+                        isEditing.toggle()
+                        reload()
+                    }
+                    .buttonStyle(.plain).scaledFont(size: 12).foregroundColor(OmiColors.textSecondary)
+                }
+                Button(isDistilling ? "Thinking…" : "Update now") { distill() }
+                    .buttonStyle(.plain).scaledFont(size: 12)
+                    .foregroundColor(isDistilling ? OmiColors.textTertiary : OmiColors.textSecondary)
+                    .disabled(isDistilling)
+            }
+
+            if isEditing {
+                TextEditor(text: $rulesText)
+                    .scaledFont(size: 11)
+                    .frame(minHeight: 100, maxHeight: 200)
+                    .scrollContentBackground(.hidden)
+                    .padding(6)
+                    .background(OmiColors.backgroundTertiary.opacity(0.5))
+                    .cornerRadius(6)
+            } else {
+                ForEach(rules, id: \.self) { rule in
+                    Text("· \(rule)").scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+                }
+            }
+
+            if !status.isEmpty {
+                Text(status).scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+            }
+
+            if !rules.isEmpty || correctionCount > 0 {
+                Button("Forget all of this") {
+                    CopilotCorrectionLog.shared.reset()
+                    CopilotFeedbackTuner.shared.reset()
+                    reload()
+                    status = "Cleared."
+                }
+                .buttonStyle(.plain).scaledFont(size: 11).foregroundColor(OmiColors.error)
+            }
+        }
+        .onAppear { reload() }
+    }
+
+    private var subtitle: String {
+        if rules.isEmpty {
+            return correctionCount == 0
+                ? "Nothing yet — it learns from the suggestions you act on and the ones you wave away."
+                : "\(correctionCount) signals collected; rules appear once there's a pattern."
+        }
+        return "\(rules.count) rules from \(correctionCount) signals. These override omi's defaults."
+    }
+
+    private func reload() {
+        rulesText = CopilotCorrectionLog.shared.rulesText
+        rules = CopilotCorrectionLog.shared.rules
+        correctionCount = CopilotCorrectionLog.shared.all.count
+    }
+
+    private func distill() {
+        isDistilling = true
+        status = ""
+        Task { @MainActor in
+            let result = await CopilotCorrectionLog.shared.distill()
+            isDistilling = false
+            reload()
+            if result == nil { status = "Not enough to go on yet." }
         }
     }
 }
