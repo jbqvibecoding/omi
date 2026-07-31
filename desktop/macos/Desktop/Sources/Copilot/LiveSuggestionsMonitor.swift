@@ -61,6 +61,11 @@ final class LiveSuggestionsMonitor: ObservableObject {
     /// copilot starts the meeting already knowing who's in the room.
     private var meetingBrief: MeetingPrepBrief?
 
+    /// The last talk track we handed the user, waiting to see how they actually said it.
+    private var pendingTalkTrack: (text: String, at: Date)?
+    /// How long after a talk track a spoken line still counts as a rephrasing of it.
+    private let styleCorrectionWindow: TimeInterval = 120
+
     private var geminiClient: GeminiClient?
     private var cancellables = Set<AnyCancellable>()
 
@@ -137,6 +142,10 @@ final class LiveSuggestionsMonitor: ObservableObject {
         vocabularyHit = false
         suggestionsThisSession = []
         kbHits = []
+        meetingBrief = nil
+        pendingTalkTrack = nil
+        // A session just ended, so there's fresh speech of yours to learn from.
+        CopilotStyleLearner.shared.refreshIfNeeded()
     }
 
     // MARK: - Transcript Handling
@@ -171,8 +180,30 @@ final class LiveSuggestionsMonitor: ObservableObject {
             }
         }
 
+        captureStyleCorrection(in: newSegments)
         prefetchNotesIfNeeded(segments: segments)
         maybeEvaluate(segments: segments)
+    }
+
+    /// When omi hands you a line and you then say it your own way, that pair is the single
+    /// most useful thing it can learn from — Ami weighs these hardest. We can only catch it
+    /// because the transcript already knows which speaker is you.
+    private func captureStyleCorrection(in newSegments: ArraySlice<SpeakerSegment>) {
+        guard CopilotSettings.shared.styleMatchingEnabled, let pending = pendingTalkTrack else { return }
+        guard Date().timeIntervalSince(pending.at) <= styleCorrectionWindow else {
+            pendingTalkTrack = nil
+            return
+        }
+        for segment in newSegments where segment.isUser {
+            let spoken = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard spoken.count >= 25 else { continue }
+            // Only a rephrasing of *that* line counts — an unrelated sentence teaches nothing.
+            let overlap = CopilotTextSimilarity.jaccard(pending.text, spoken)
+            guard overlap >= 0.25, overlap < 0.95 else { continue }
+            CopilotStyleLearner.shared.recordCorrection(suggested: pending.text, actual: spoken)
+            pendingTalkTrack = nil
+            return
+        }
     }
 
     /// Continuously pre-fetches notes-folder hits for the rolling transcript window so a
@@ -322,7 +353,8 @@ final class LiveSuggestionsMonitor: ObservableObject {
                 gateType: gateType,
                 recentSuggestions: suggestionsThisSession,
                 userProfile: profile,
-                notesEvidence: notesEvidence
+                notesEvidence: notesEvidence,
+                styleCard: CopilotStyleLearner.shared.card
             )
             let generateSystemPrompt = CopilotPrompts.liveSuggestionSystemPrompt(scenario: scenario)
             let responseText = try await withThrowingTimeoutCopilot(seconds: generateTimeout) {
@@ -353,7 +385,16 @@ final class LiveSuggestionsMonitor: ObservableObject {
                 return ["gate": "SPEAK \(gateType)", "dropped": "stale"]
             }
 
-            deliver(result, gateType: gateType, transcript: transcript, kbHits: kbHits)
+            // Second pass: rewrite the spoken line in the user's own voice. Cheap, fails open,
+            // and it's what makes the style card actually land (Ami's finding).
+            var delivered = result
+            if let talkTrack = result.talkTrack, !talkTrack.isEmpty {
+                let inVoice = await CopilotStyleLearner.shared.enforce(talkTrack)
+                if inVoice != talkTrack {
+                    delivered = result.withTalkTrack(inVoice)
+                }
+            }
+            deliver(delivered, gateType: gateType, transcript: transcript, kbHits: kbHits)
 
             let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1000)
             PostHogManager.shared.track(
@@ -385,6 +426,9 @@ final class LiveSuggestionsMonitor: ObservableObject {
     ) {
         // Show where the evidence came from ("From your notes: sales/pricing.md > Tiers").
         var detail = result.talkTrack ?? ""
+        if let talkTrack = result.talkTrack, !talkTrack.isEmpty {
+            pendingTalkTrack = (talkTrack, Date())
+        }
         if let source = kbHits.first {
             let sourceLine = "From your notes: \(source.breadcrumb)"
             detail = detail.isEmpty ? sourceLine : "\(detail)\n\n\(sourceLine)"

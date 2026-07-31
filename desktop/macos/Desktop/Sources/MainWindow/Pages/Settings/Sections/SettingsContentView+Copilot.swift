@@ -52,6 +52,17 @@ extension SettingsContentView {
                         ) { CopilotSettings.shared.meetingPrepEnabled = $0 }
 
                         copilotSubToggle(
+                            title: "Sound like me",
+                            subtitle:
+                                "Rewrites the line you can say out loud in your own voice, learned from how you actually talk.",
+                            isOn: $copilotStyleMatching
+                        ) { CopilotSettings.shared.styleMatchingEnabled = $0 }
+
+                        if copilotStyleMatching {
+                            copilotStyleCardRow
+                        }
+
+                        copilotSubToggle(
                             title: "Export meetings as markdown",
                             subtitle: "Saves minutes + transcript to ~/Documents/Omi/Meetings after each session.",
                             isOn: $copilotExportMarkdown
@@ -223,6 +234,10 @@ extension SettingsContentView {
         }
     }
 
+    private var copilotStyleCardRow: some View {
+        CopilotStyleCardRow()
+    }
+
     private func copilotSubToggle(
         title: String, subtitle: String, isOn: Binding<Bool>, onChange: @escaping (Bool) -> Void
     ) -> some View {
@@ -234,6 +249,84 @@ extension SettingsContentView {
             Spacer()
             Toggle("", isOn: isOn).toggleStyle(.switch).labelsHidden()
                 .onChange(of: isOn.wrappedValue) { _, v in onChange(v) }
+        }
+    }
+}
+
+/// The learned voice, shown plainly and editable — you should be able to see exactly what
+/// omi thinks you sound like, and correct it.
+private struct CopilotStyleCardRow: View {
+    @State private var card: String = ""
+    @State private var isLearning = false
+    @State private var status: String = ""
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Your voice").scaledFont(size: 13).foregroundColor(OmiColors.textSecondary)
+                    Text(subtitle).scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+                }
+                Spacer()
+                if !card.isEmpty {
+                    Button(isExpanded ? "Hide" : "View") { isExpanded.toggle() }
+                        .buttonStyle(.plain).scaledFont(size: 12)
+                        .foregroundColor(OmiColors.textSecondary)
+                }
+                Button(isLearning ? "Learning…" : "Relearn") { relearn() }
+                    .buttonStyle(.plain).scaledFont(size: 12)
+                    .foregroundColor(isLearning ? OmiColors.textTertiary : OmiColors.textSecondary)
+                    .disabled(isLearning)
+            }
+
+            if isExpanded {
+                TextEditor(text: $card)
+                    .scaledFont(size: 11)
+                    .frame(minHeight: 120, maxHeight: 220)
+                    .scrollContentBackground(.hidden)
+                    .padding(6)
+                    .background(OmiColors.backgroundTertiary.opacity(0.5))
+                    .cornerRadius(6)
+                HStack {
+                    Spacer()
+                    Button("Save") { CopilotStyleLearner.shared.setCard(card) }
+                        .buttonStyle(.plain).scaledFont(size: 12)
+                        .foregroundColor(OmiColors.textSecondary)
+                }
+            }
+
+            if !status.isEmpty {
+                Text(status).scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+            }
+        }
+        .onAppear { card = CopilotStyleLearner.shared.card ?? "" }
+    }
+
+    private var subtitle: String {
+        if card.isEmpty {
+            return "Not learned yet — record a meeting and omi picks it up from how you speak."
+        }
+        guard let at = CopilotStyleLearner.shared.cardUpdatedAt else { return "Learned from your own spoken lines." }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return "Learned from your own spoken lines · updated \(formatter.string(from: at))"
+    }
+
+    private func relearn() {
+        isLearning = true
+        status = ""
+        Task { @MainActor in
+            let learned = await CopilotStyleLearner.shared.learnCard()
+            isLearning = false
+            if let learned {
+                card = learned
+                isExpanded = true
+                status = ""
+            } else {
+                status = "Not enough of your own speech yet — record a meeting first."
+            }
         }
     }
 }

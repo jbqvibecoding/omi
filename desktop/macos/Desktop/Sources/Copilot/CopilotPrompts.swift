@@ -191,7 +191,8 @@ extension CopilotPrompts {
         gateType: String,
         recentSuggestions: [String],
         userProfile: String?,
-        notesEvidence: String? = nil
+        notesEvidence: String? = nil,
+        styleCard: String? = nil
     ) -> String {
         var sections: [String] = ["Trigger type: \(gateType)"]
         if !recentSuggestions.isEmpty {
@@ -201,6 +202,14 @@ extension CopilotPrompts {
         }
         if let userProfile, !userProfile.isEmpty {
             sections.append("What we know about the user:\n\(userProfile)")
+        }
+        if let styleCard, !styleCard.isEmpty {
+            // Learned from the user's own spoken lines — it wins over the generic tone rules,
+            // because a talk track they wouldn't say out loud is worthless.
+            sections.append(
+                "How the user actually talks (learned from their real spoken lines). The "
+                    + "talk_track must sound like them — match this rigorously; where it "
+                    + "conflicts with the general guidance above, THIS wins:\n\(styleCard)")
         }
         if let notesEvidence { sections.append(notesEvidence) }
         sections.append("Recent transcript (most recent last):\n\(transcript)")
@@ -352,6 +361,20 @@ struct CopilotLiveSuggestion: Decodable {
         case suggestion
         case talkTrack = "talk_track"
         case confidence
+    }
+
+    init(headline: String, suggestion: String, talkTrack: String?, confidence: Double) {
+        self.headline = headline
+        self.suggestion = suggestion
+        self.talkTrack = talkTrack
+        self.confidence = confidence
+    }
+
+    /// Same suggestion with the spoken line rewritten in the user's voice.
+    func withTalkTrack(_ newTalkTrack: String) -> CopilotLiveSuggestion {
+        CopilotLiveSuggestion(
+            headline: headline, suggestion: suggestion, talkTrack: newTalkTrack,
+            confidence: confidence)
     }
 }
 

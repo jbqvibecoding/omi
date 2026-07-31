@@ -153,6 +153,21 @@ final class CopilotOrchestrator {
         }
 
         DesktopAutomationActionRegistry.shared.register(
+            name: "copilot_style_dump",
+            summary: "Show the learned style card omi uses to make talk tracks sound like you, "
+                + "plus how much of your own speech it learned from."
+        ) { _ in
+            await MainActor.run { CopilotStyleLearner.shared.debugDump() }
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
+            name: "copilot_style_relearn",
+            summary: "Relearn the style card now from your recent spoken lines and corrections."
+        ) { _ in
+            await CopilotStyleLearner.shared.debugRelearn()
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
             name: "watcher_inbox",
             summary: "List watcher actions parked waiting for your approval (nothing is sent "
                 + "until approved); returns id, watcher, target and the drafted body."

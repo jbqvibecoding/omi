@@ -20,6 +20,7 @@ class CopilotSettings {
     private let autoDetectMeetingsKey = "copilotAutoDetectMeetings"
     private let exportMeetingMarkdownKey = "copilotExportMeetingMarkdown"
     private let meetingPrepEnabledKey = "copilotMeetingPrepEnabled"
+    private let styleMatchingEnabledKey = "copilotStyleMatchingEnabled"
 
     // MARK: - Default Values
 
@@ -41,6 +42,7 @@ class CopilotSettings {
             notesRagEnabledKey: true,
             autoDetectMeetingsKey: true,
             meetingPrepEnabledKey: true,
+            styleMatchingEnabledKey: true,
         ])
     }
 
@@ -158,6 +160,16 @@ class CopilotSettings {
         get { UserDefaults.standard.bool(forKey: autoDetectMeetingsKey) }
         set {
             UserDefaults.standard.set(newValue, forKey: autoDetectMeetingsKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Whether talk tracks are rewritten to sound like the user (learned from their own
+    /// spoken lines in past meetings).
+    var styleMatchingEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: styleMatchingEnabledKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: styleMatchingEnabledKey)
             NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
         }
     }

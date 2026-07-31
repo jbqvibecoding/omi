@@ -171,6 +171,7 @@ struct SettingsContentView: View {
   @State var copilotAutoDetectMeetings: Bool
   @State var copilotExportMarkdown: Bool
   @State var copilotMeetingPrep: Bool
+  @State var copilotStyleMatching: Bool
   @State var showWatchersManager = false
   @State var screenOpOnlyOnChange: Bool
   @State var insightOnlyOnChange: Bool
@@ -458,6 +459,7 @@ struct SettingsContentView: View {
     _copilotAutoDetectMeetings = State(initialValue: CopilotSettings.shared.autoDetectMeetings)
     _copilotExportMarkdown = State(initialValue: CopilotSettings.shared.exportMeetingMarkdown)
     _copilotMeetingPrep = State(initialValue: CopilotSettings.shared.meetingPrepEnabled)
+    _copilotStyleMatching = State(initialValue: CopilotSettings.shared.styleMatchingEnabled)
     _screenOpOnlyOnChange = State(initialValue: ScreenOpAssistantSettings.shared.onlyOnSignificantChange)
     _insightOnlyOnChange = State(initialValue: InsightAssistantSettings.shared.onlyOnSignificantChange)
     _insightEnabled = State(initialValue: InsightAssistantSettings.shared.isEnabled)
