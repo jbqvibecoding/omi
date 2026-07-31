@@ -46,6 +46,12 @@ extension SettingsContentView {
                         ) { CopilotSettings.shared.autoDetectMeetings = $0 }
 
                         copilotSubToggle(
+                            title: "Brief me before meetings",
+                            subtitle: "Shows who's coming and what's still open with them — only when your notes know them.",
+                            isOn: $copilotMeetingPrep
+                        ) { CopilotSettings.shared.meetingPrepEnabled = $0 }
+
+                        copilotSubToggle(
                             title: "Export meetings as markdown",
                             subtitle: "Saves minutes + transcript to ~/Documents/Omi/Meetings after each session.",
                             isOn: $copilotExportMarkdown

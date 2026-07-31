@@ -19,12 +19,16 @@ final class MeetingAutoDetectMonitor {
     private var hasPromptedThisMeeting = false
     private var lastPromptAt: Date = .distantPast
     private var settingsObserver: NSObjectProtocol?
+    /// Polls the calendar for a meeting worth briefing ahead of time.
+    private var prepTimer: Timer?
+    private let prepCheckInterval: TimeInterval = 15 * 60
 
     private init() {}
 
     /// Called once at app startup (from CopilotOrchestrator.setup()).
     func start() {
         refresh()
+        startPrepTimer()
         settingsObserver = NotificationCenter.default.addObserver(
             forName: .assistantSettingsDidChange, object: nil, queue: .main
         ) { _ in
@@ -68,6 +72,61 @@ final class MeetingAutoDetectMonitor {
         hasPromptedThisMeeting = true
         lastPromptAt = Date()
         prompt()
+    }
+
+    // MARK: - Pre-meeting brief
+
+    private func startPrepTimer() {
+        prepTimer?.invalidate()
+        prepTimer = Timer.scheduledTimer(withTimeInterval: prepCheckInterval, repeats: true) { _ in
+            Task { @MainActor in await MeetingAutoDetectMonitor.shared.checkForPrep() }
+        }
+        // Also check shortly after launch so a meeting starting soon isn't missed.
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 20_000_000_000)
+            await self.checkForPrep()
+        }
+    }
+
+    /// Brief the next meeting inside the lead-time window, once.
+    func checkForPrep() async {
+        guard CopilotSettings.shared.isEnabled, CopilotSettings.shared.meetingPrepEnabled else { return }
+        guard !AppState.isPaywalledEffective else { return }
+        guard let event = await MeetingPrepService.upcomingUnbriefedEvent() else { return }
+        guard let brief = await MeetingPrepService.prepare(for: event) else {
+            // Nothing known about anyone — mark it so we don't retry every 15 minutes.
+            MeetingPrepService.markBriefed(eventId: event.id)
+            return
+        }
+        MeetingPrepService.markBriefed(eventId: event.id)
+        presentBrief(brief)
+    }
+
+    private func presentBrief(_ brief: MeetingPrepBrief) {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        log("MeetingAutoDetectMonitor: presenting prep brief for \(brief.title)")
+        PostHogManager.shared.track(
+            "copilot_meeting_prep_shown",
+            properties: ["matched": brief.matchedCount, "open_items": brief.openItems.count])
+        NotificationService.shared.sendNotification(
+            title: "\(formatter.string(from: brief.startsAt)) · \(brief.title)",
+            message: brief.hudMessage,
+            assistantId: "copilot",
+            sound: .none,
+            context: FloatingBarNotificationContext(
+                sourceTitle: "Meeting prep",
+                assistantId: "copilot",
+                sourceApp: nil,
+                windowTitle: nil,
+                contextSummary: nil,
+                currentActivity: nil,
+                reasoning: "meeting_prep",
+                detail: brief.sourceBreadcrumbs.isEmpty
+                    ? nil : "From your notes: " + brief.sourceBreadcrumbs.prefix(3).joined(separator: ", "),
+                feedbackBucket: "meeting_prep:brief"
+            ),
+            respectFrequency: false)
     }
 
     private func prompt() {

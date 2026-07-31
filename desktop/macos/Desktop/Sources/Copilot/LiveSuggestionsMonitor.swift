@@ -57,6 +57,9 @@ final class LiveSuggestionsMonitor: ObservableObject {
     private var kbHits: [NotesKBHit] = []
     private var kbFetchedAt: Date = .distantPast
     private var isFetchingKB = false
+    /// Pre-meeting brief for the session's calendar event, used as opening context so the
+    /// copilot starts the meeting already knowing who's in the room.
+    private var meetingBrief: MeetingPrepBrief?
 
     private var geminiClient: GeminiClient?
     private var cancellables = Set<AnyCancellable>()
@@ -86,6 +89,19 @@ final class LiveSuggestionsMonitor: ObservableObject {
         preGateSkipCount = 0
         kbHits = []
         kbFetchedAt = .distantPast
+        meetingBrief = nil
+
+        // Pull the brief for the meeting we're in (if any) so the first suggestions already
+        // know the attendees and what's still open with them.
+        if CopilotSettings.shared.meetingPrepEnabled {
+            let startedSessionId = sessionId
+            Task { [weak self] in
+                let brief = await MeetingPrepService.briefForCurrentMeeting()
+                guard let self, self.currentSessionId == startedSessionId, let brief else { return }
+                self.meetingBrief = brief
+                log("LiveSuggestionsMonitor: loaded meeting brief for '\(brief.title)'")
+            }
+        }
 
         // Auto-select the scenario profile from the calendar (non-blocking, graceful).
         if CopilotSettings.shared.autoSelectScenario {
@@ -256,7 +272,13 @@ final class LiveSuggestionsMonitor: ObservableObject {
         defer { isEvaluating = false }
         let startedAt = Date()
         let scenario = CopilotSettings.shared.scenario
-        let notesEvidence = CopilotPrompts.notesEvidenceBlock(hits: kbHits)
+        var notesEvidence = CopilotPrompts.notesEvidenceBlock(hits: kbHits)
+        // Fold the meeting brief in as additional evidence — same untrusted-data framing.
+        if let brief = meetingBrief {
+            notesEvidence = [notesEvidence, brief.contextBlock]
+                .compactMap { $0 }
+                .joined(separator: "\n\n")
+        }
 
         do {
             let client = try cachedGeminiClient()

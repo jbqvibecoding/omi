@@ -145,6 +145,14 @@ final class CopilotOrchestrator {
         }
 
         DesktopAutomationActionRegistry.shared.register(
+            name: "copilot_meeting_prep_test",
+            summary: "Build the pre-meeting brief for the next calendar meeting within 6h "
+                + "(attendees resolved against your notes); returns matched people and bullets."
+        ) { _ in
+            await MeetingPrepService.debugPrepare()
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
             name: "watcher_inbox",
             summary: "List watcher actions parked waiting for your approval (nothing is sent "
                 + "until approved); returns id, watcher, target and the drafted body."

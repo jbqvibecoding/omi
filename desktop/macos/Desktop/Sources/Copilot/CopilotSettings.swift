@@ -19,6 +19,7 @@ class CopilotSettings {
     private let notesRagEnabledKey = "copilotNotesRagEnabled"
     private let autoDetectMeetingsKey = "copilotAutoDetectMeetings"
     private let exportMeetingMarkdownKey = "copilotExportMeetingMarkdown"
+    private let meetingPrepEnabledKey = "copilotMeetingPrepEnabled"
 
     // MARK: - Default Values
 
@@ -39,6 +40,7 @@ class CopilotSettings {
             autoSelectScenarioKey: true,
             notesRagEnabledKey: true,
             autoDetectMeetingsKey: true,
+            meetingPrepEnabledKey: true,
         ])
     }
 
@@ -156,6 +158,15 @@ class CopilotSettings {
         get { UserDefaults.standard.bool(forKey: autoDetectMeetingsKey) }
         set {
             UserDefaults.standard.set(newValue, forKey: autoDetectMeetingsKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Whether a brief is surfaced before meetings with people you have notes on.
+    var meetingPrepEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: meetingPrepEnabledKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: meetingPrepEnabledKey)
             NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
         }
     }
