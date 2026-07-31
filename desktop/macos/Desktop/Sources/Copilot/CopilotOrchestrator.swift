@@ -145,6 +145,38 @@ final class CopilotOrchestrator {
         }
 
         DesktopAutomationActionRegistry.shared.register(
+            name: "watcher_inbox",
+            summary: "List watcher actions parked waiting for your approval (nothing is sent "
+                + "until approved); returns id, watcher, target and the drafted body."
+        ) { _ in
+            let pending = await MainActor.run { WatcherApprovalStore.shared.pending }
+            if pending.isEmpty { return ["pending": "0"] }
+            var out: [String: String] = ["pending": String(pending.count)]
+            for item in pending {
+                out[item.id] =
+                    "\(item.watcherName) · \(item.kind) → \(item.target ?? "-") · \(String(item.body.prefix(80)))"
+            }
+            return out
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
+            name: "watcher_resolve",
+            summary: "Resolve a parked watcher approval: r=allow|always|deny (allow sends it, "
+                + "always also grants that exact target).",
+            params: ["id", "r"]
+        ) { params in
+            guard let id = params["id"], !id.isEmpty else { return ["error": "missing id param"] }
+            let resolution = params["r"] ?? "deny"
+            guard ["allow", "always", "deny"].contains(resolution) else {
+                return ["error": "r must be allow|always|deny"]
+            }
+            let ok = await MainActor.run {
+                WatcherApprovalStore.shared.resolve(id: id, resolution: resolution)
+            }
+            return ["resolved": ok ? "true" : "false", "resolution": resolution]
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
             name: "watcher_runs",
             summary: "Print a watcher's recent run history (response head, acted/no-op, errors).",
             params: ["id"]

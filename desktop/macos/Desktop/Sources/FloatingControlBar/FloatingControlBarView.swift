@@ -826,6 +826,7 @@ struct FloatingControlBarView: View {
         case "task": return 90       // Execute + X
         case "copilot": return 150   // Copy + Execute + X
         case "copilot_meeting": return 90  // Start + X
+        case "watcher_approval": return 190  // Send + Always + X
         default: return 36           // X only
         }
     }
@@ -1011,7 +1012,61 @@ struct FloatingControlBarView: View {
                     .help("Start recording with the live copilot")
                 }
 
+                // Watcher approval: the watcher drafted something that leaves this Mac and is
+                // suspended until the user decides. Dismissing denies it — nothing is sent
+                // unless the user presses Send.
+                if notification.assistantId == "watcher_approval" {
+                    Button {
+                        if let itemId = notification.context?.contextSummary {
+                            _ = WatcherApprovalStore.shared.resolve(id: itemId, resolution: "allow")
+                        }
+                        FloatingControlBarManager.shared.dismissCurrentNotification()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "paperplane.fill")
+                                .font(.system(size: 9, weight: .bold))
+                            Text("Send")
+                                .scaledFont(size: 10, weight: .semibold)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.18))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help(notification.context?.reasoning ?? "Send this message")
+
+                    // Only offered when the action names an exact target — the grant binds to
+                    // that target alone, never to the channel as a whole.
+                    if let grant = notification.context?.currentActivity, !grant.isEmpty {
+                        Button {
+                            if let itemId = notification.context?.contextSummary {
+                                _ = WatcherApprovalStore.shared.resolve(id: itemId, resolution: "always")
+                            }
+                            FloatingControlBarManager.shared.dismissCurrentNotification()
+                        } label: {
+                            Text("Always here")
+                                .scaledFont(size: 10, weight: .semibold)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.white.opacity(0.12))
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Allow \(WatcherPermission.describeGrant(grant)) without asking again")
+                    }
+                }
+
                 Button {
+                    // A dismissed approval is an explicit denial — resolve it so the waiting
+                    // watcher resumes instead of hanging until the timeout.
+                    if notification.assistantId == "watcher_approval",
+                        let itemId = notification.context?.contextSummary
+                    {
+                        _ = WatcherApprovalStore.shared.resolve(id: itemId, resolution: "deny")
+                    }
                     FloatingControlBarManager.shared.dismissCurrentNotification()
                 } label: {
                     Image(systemName: "xmark")

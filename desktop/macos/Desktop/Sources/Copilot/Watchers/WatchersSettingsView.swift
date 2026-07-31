@@ -3,6 +3,7 @@ import SwiftUI
 /// Lists user-defined watchers and channel credentials; entry point for creating/editing.
 struct WatchersManagerView: View {
     @ObservedObject private var store = WatcherStore.shared
+    @ObservedObject private var approvals = WatcherApprovalStore.shared
     @State private var editing: WatcherAgent?
     @State private var showingNew = false
     @State private var telegramToken: String = ""
@@ -47,6 +48,17 @@ struct WatchersManagerView: View {
                 }
             }
 
+            if !approvals.pending.isEmpty {
+                Divider().background(OmiColors.backgroundQuaternary)
+                Text("Waiting for you (\(approvals.pending.count))")
+                    .scaledFont(size: 13, weight: .semibold).foregroundColor(OmiColors.textSecondary)
+                Text("Nothing is sent until you approve it.")
+                    .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+                ForEach(approvals.pending) { item in
+                    WatcherApprovalRow(item: item)
+                }
+            }
+
             Divider().background(OmiColors.backgroundQuaternary)
 
             Text("Notification channels").scaledFont(size: 13, weight: .semibold)
@@ -85,6 +97,59 @@ struct WatchersManagerView: View {
     }
 }
 
+/// One parked approval: the draft is editable, and nothing leaves this Mac until Send.
+struct WatcherApprovalRow: View {
+    let item: WatcherApprovalItem
+    @State private var draft: String = ""
+    @State private var loaded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("\(item.watcherName) — \(item.kind)")
+                    .scaledFont(size: 13, weight: .medium).foregroundColor(OmiColors.textPrimary)
+                Spacer()
+                Text(item.scopeNote)
+                    .scaledFont(size: 10)
+                    .foregroundColor(item.risk == .external ? OmiColors.warning : OmiColors.textTertiary)
+            }
+            if let target = item.target, !target.isEmpty {
+                Text("To: \(target)").scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+                    .lineLimit(1).truncationMode(.middle)
+            }
+            TextEditor(text: $draft)
+                .font(.system(size: 12))
+                .frame(minHeight: 60)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(OmiColors.backgroundQuaternary))
+            HStack {
+                Spacer()
+                Button("Discard") {
+                    _ = WatcherApprovalStore.shared.resolve(id: item.id, resolution: "deny")
+                }
+                .buttonStyle(.plain).scaledFont(size: 12).foregroundColor(OmiColors.textSecondary)
+                if item.grantEntry != nil {
+                    Button("Send, always allow this target") {
+                        _ = WatcherApprovalStore.shared.resolve(
+                            id: item.id, resolution: "always", editedBody: draft)
+                    }
+                    .scaledFont(size: 12)
+                }
+                Button("Send") {
+                    _ = WatcherApprovalStore.shared.resolve(
+                        id: item.id, resolution: "allow", editedBody: draft)
+                }
+                .scaledFont(size: 12)
+            }
+        }
+        .padding(.vertical, 6)
+        .onAppear {
+            guard !loaded else { return }
+            draft = item.finalBody
+            loaded = true
+        }
+    }
+}
+
 /// Create or edit a single watcher, with optional AI drafting from a description.
 struct WatcherEditorView: View {
     let existing: WatcherAgent?
@@ -99,6 +164,8 @@ struct WatcherEditorView: View {
     @State private var actions: [EditableAction]
     @State private var backendKind: WatcherBackendKind
     @State private var modelId: String
+    @State private var approvalPolicy: WatcherApprovalPolicy
+    @State private var standingGrants: [String]
     @State private var describeText: String = ""
     @State private var isGenerating = false
     @State private var generationError: String?
@@ -126,6 +193,8 @@ struct WatcherEditorView: View {
         _actions = State(initialValue: (existing?.actions ?? []).map(EditableAction.init(from:)))
         _backendKind = State(initialValue: existing?.effectiveBackend ?? .gemini)
         _modelId = State(initialValue: existing?.modelId ?? "")
+        _approvalPolicy = State(initialValue: existing?.effectiveApprovalPolicy ?? .ask)
+        _standingGrants = State(initialValue: existing?.standingGrantEntries ?? [])
     }
 
     var body: some View {
@@ -184,6 +253,30 @@ struct WatcherEditorView: View {
                     }
                     Toggle("Only when the screen changes", isOn: $onlyOnChange)
                         .scaledFont(size: 13).foregroundColor(OmiColors.textPrimary)
+                }
+
+                field("Before sending anything off this Mac") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Picker("", selection: $approvalPolicy) {
+                            Text("Ask me first (recommended)").tag(WatcherApprovalPolicy.ask)
+                            Text("Send without asking").tag(WatcherApprovalPolicy.auto)
+                        }.pickerStyle(.radioGroup)
+                        if !standingGrants.isEmpty {
+                            Text("Allowed without asking")
+                                .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+                            ForEach(standingGrants, id: \.self) { entry in
+                                HStack {
+                                    Text(WatcherPermission.describeGrant(entry))
+                                        .scaledFont(size: 11).foregroundColor(OmiColors.textSecondary)
+                                        .lineLimit(1).truncationMode(.middle)
+                                    Spacer()
+                                    Button("Revoke") { standingGrants.removeAll { $0 == entry } }
+                                        .buttonStyle(.plain).scaledFont(size: 11)
+                                        .foregroundColor(OmiColors.error)
+                                }
+                            }
+                        }
+                    }
                 }
 
                 field("Model") {
@@ -306,7 +399,9 @@ struct WatcherEditorView: View {
             actions: actions.map { $0.toAction() },
             isEnabled: existing?.isEnabled ?? false,
             backend: backendKind,
-            modelId: backendKind == .ollama ? modelId.trimmingCharacters(in: .whitespaces) : nil)
+            modelId: backendKind == .ollama ? modelId.trimmingCharacters(in: .whitespaces) : nil,
+            approvalPolicy: approvalPolicy,
+            standingGrants: standingGrants.isEmpty ? nil : standingGrants)
         WatcherStore.shared.upsert(watcher)
         onDismiss()
     }

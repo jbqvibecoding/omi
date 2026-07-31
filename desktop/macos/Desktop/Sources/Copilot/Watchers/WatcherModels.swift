@@ -24,6 +24,11 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
     var backend: WatcherBackendKind?
     /// Model id for the chosen backend (e.g. an Ollama model like "gemma3"); nil = default.
     var modelId: String?
+    /// Whether actions that leave this Mac ask first. nil = ask (the safe default).
+    var approvalPolicy: WatcherApprovalPolicy?
+    /// Standing grants, each binding one action kind to one EXACT target
+    /// ("discord https://hooks…"). Never wildcards; minted only by the user.
+    var standingGrants: [String]?
 
     static let minLoopIntervalSeconds = 15
     static let defaultLoopIntervalSeconds = 60
@@ -31,6 +36,9 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
     var effectiveInterval: Int { max(Self.minLoopIntervalSeconds, loopIntervalSeconds) }
     var effectiveBackend: WatcherBackendKind { backend ?? .gemini }
     var effectiveModelId: String? { modelId?.isEmpty == false ? modelId : nil }
+    /// Ask before anything leaves this Mac unless the user opted out.
+    var effectiveApprovalPolicy: WatcherApprovalPolicy { approvalPolicy ?? .ask }
+    var standingGrantEntries: [String] { standingGrants ?? [] }
 
     init(
         id: String = "watcher_\(UUID().uuidString.prefix(8))",
@@ -42,7 +50,9 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
         actions: [WatcherAction] = [],
         isEnabled: Bool = false,
         backend: WatcherBackendKind? = nil,
-        modelId: String? = nil
+        modelId: String? = nil,
+        approvalPolicy: WatcherApprovalPolicy? = nil,
+        standingGrants: [String]? = nil
     ) {
         self.id = id
         self.name = name
@@ -54,6 +64,8 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
         self.isEnabled = isEnabled
         self.backend = backend
         self.modelId = modelId
+        self.approvalPolicy = approvalPolicy
+        self.standingGrants = standingGrants
     }
 
     // Explicit Codable so adding fields never breaks decoding of previously stored watchers
@@ -61,6 +73,7 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case id, name, systemPrompt, loopIntervalSeconds, onlyOnSignificantChange
         case condition, actions, isEnabled, backend, modelId
+        case approvalPolicy, standingGrants
     }
 
     init(from decoder: Decoder) throws {
@@ -76,6 +89,8 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
         isEnabled = (try? c.decode(Bool.self, forKey: .isEnabled)) ?? false
         backend = try? c.decodeIfPresent(WatcherBackendKind.self, forKey: .backend)
         modelId = try? c.decodeIfPresent(String.self, forKey: .modelId)
+        approvalPolicy = try? c.decodeIfPresent(WatcherApprovalPolicy.self, forKey: .approvalPolicy)
+        standingGrants = try? c.decodeIfPresent([String].self, forKey: .standingGrants)
     }
 }
 
