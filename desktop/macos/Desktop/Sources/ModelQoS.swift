@@ -95,6 +95,12 @@ struct ModelQoS {
             }
         }
 
+        /// Background housekeeping — memory curation, dedup, style learning, rule
+        /// distillation, event routing. Always the cheap model regardless of tier: these
+        /// run on a schedule with nobody waiting, and paying premium rates for them is
+        /// what makes an always-on assistant expensive.
+        static var utility: String { "gemini-2.5-flash" }
+
         /// Embeddings (not tier-dependent, kept separate)
         static var embedding: String { "gemini-embedding-001" }
     }

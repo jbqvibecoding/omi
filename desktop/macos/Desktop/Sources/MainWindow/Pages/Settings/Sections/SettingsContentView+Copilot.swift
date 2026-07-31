@@ -63,6 +63,24 @@ extension SettingsContentView {
                         }
 
                         copilotSubToggle(
+                            title: "Remember people and projects",
+                            subtitle:
+                                "Keeps a file per person, org, project and topic from your meetings, and tidies them up daily.",
+                            isOn: $copilotDossiers
+                        ) { CopilotSettings.shared.dossiersEnabled = $0 }
+
+                        if copilotDossiers {
+                            HStack {
+                                Text("Stored on this Mac as plain markdown you can read and edit.")
+                                    .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+                                Spacer()
+                                Button("Browse") { showDossierBrowser = true }
+                                    .buttonStyle(.plain).scaledFont(size: 12)
+                                    .foregroundColor(OmiColors.textSecondary)
+                            }
+                        }
+
+                        copilotSubToggle(
                             title: "Export meetings as markdown",
                             subtitle: "Saves minutes + transcript to ~/Documents/Omi/Meetings after each session.",
                             isOn: $copilotExportMarkdown
@@ -89,6 +107,9 @@ extension SettingsContentView {
                 }
                 .sheet(isPresented: $showCopilotProfilesManager) {
                     CopilotProfilesManagerView { showCopilotProfilesManager = false }
+                }
+                .sheet(isPresented: $showDossierBrowser) {
+                    DossierBrowserView { showDossierBrowser = false }
                 }
             }
 

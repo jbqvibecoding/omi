@@ -21,6 +21,7 @@ class CopilotSettings {
     private let exportMeetingMarkdownKey = "copilotExportMeetingMarkdown"
     private let meetingPrepEnabledKey = "copilotMeetingPrepEnabled"
     private let styleMatchingEnabledKey = "copilotStyleMatchingEnabled"
+    private let dossiersEnabledKey = "copilotDossiersEnabled"
 
     // MARK: - Default Values
 
@@ -43,6 +44,7 @@ class CopilotSettings {
             autoDetectMeetingsKey: true,
             meetingPrepEnabledKey: true,
             styleMatchingEnabledKey: true,
+            dossiersEnabledKey: true,
         ])
     }
 
@@ -170,6 +172,15 @@ class CopilotSettings {
         get { UserDefaults.standard.bool(forKey: styleMatchingEnabledKey) }
         set {
             UserDefaults.standard.set(newValue, forKey: styleMatchingEnabledKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Whether omi keeps entity files (people, orgs, projects, topics) from your meetings.
+    var dossiersEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: dossiersEnabledKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: dossiersEnabledKey)
             NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
         }
     }

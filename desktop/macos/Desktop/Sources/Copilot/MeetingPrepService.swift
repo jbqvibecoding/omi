@@ -53,7 +53,9 @@ enum MeetingPrepService {
 
     /// Assemble a brief, or nil when no attendee could be tied to anything the user wrote.
     static func prepare(for event: CalendarEvent) async -> MeetingPrepBrief? {
-        guard CopilotSettings.shared.notesRagActive else { return nil }
+        guard CopilotSettings.shared.notesRagActive || CopilotSettings.shared.dossiersEnabled else {
+            return nil
+        }
 
         let ownEmailFragments = ["me", "self"]
         let attendees = event.attendees
@@ -64,13 +66,18 @@ enum MeetingPrepService {
         var matched: [String] = []
         var unmatched: [String] = []
         var hits: [NotesKBHit] = []
+        var dossiers: [Dossier] = []
 
         for attendee in attendees {
+            // The dossier layer answers "who is this" exactly, so it goes first; the notes
+            // folder is the fallback for people omi hasn't built a file on yet.
+            let dossier = resolveDossier(attendee: attendee)
             let attendeeHits = await resolve(attendee: attendee)
-            if attendeeHits.isEmpty {
+            if dossier == nil && attendeeHits.isEmpty {
                 unmatched.append(attendee)
             } else {
                 matched.append(displayName(for: attendee))
+                if let dossier { dossiers.append(dossier) }
                 hits.append(contentsOf: attendeeHits)
             }
         }
@@ -78,8 +85,12 @@ enum MeetingPrepService {
         // The gate: never show an empty brief.
         guard !matched.isEmpty else { return nil }
 
-        let openItems = extractOpenItems(from: hits)
-        let bullets = await whatMattersBullets(event: event, hits: hits)
+        var openItems = extractOpenItems(from: hits)
+        for item in dossiers.flatMap({ $0.openItems }) where !openItems.contains(item) {
+            openItems.append(item)
+        }
+        openItems = Array(openItems.prefix(8))
+        let bullets = await whatMattersBullets(event: event, hits: hits, dossiers: dossiers)
         guard !bullets.isEmpty || !openItems.isEmpty else { return nil }
 
         return MeetingPrepBrief(
@@ -127,18 +138,24 @@ enum MeetingPrepService {
 
     /// Brief for the meeting happening right now, for the live copilot's opening context.
     static func briefForCurrentMeeting() async -> MeetingPrepBrief? {
+        guard let current = await currentEvent() else { return nil }
+        return await prepare(for: current)
+    }
+
+    /// The calendar event covering now, if any. Shared by the brief and by the dossier
+    /// writer, which needs the real attendee list rather than names guessed off audio.
+    static func currentEvent() async -> CalendarEvent? {
         let status = await CalendarReaderService.shared.verifyConnection()
         guard status == .connected else { return nil }
         guard let events = try? await CalendarReaderService.shared.readEvents(
             daysBack: 0, daysForward: 1, maxResults: 50)
         else { return nil }
         let now = Date()
-        guard let current = events.first(where: { event in
+        return events.first(where: { event in
             guard let start = parseDate(event.startTime) else { return false }
             let end = parseDate(event.endTime) ?? start.addingTimeInterval(3600)
             return start.addingTimeInterval(-15 * 60) <= now && now <= end
-        }) else { return nil }
-        return await prepare(for: current)
+        })
     }
 
     // MARK: - Deterministic attendee resolution
@@ -173,6 +190,18 @@ enum MeetingPrepService {
         return value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Pin an attendee to a dossier. Exact email only, or a name that matches exactly one
+    /// file — same rule as the notes path, for the same reason.
+    private static func resolveDossier(attendee: String) -> Dossier? {
+        guard CopilotSettings.shared.dossiersEnabled else { return nil }
+        if attendee.contains("@"), let byEmail = DossierIndex.shared.person(email: attendee) {
+            return byEmail
+        }
+        let name = displayName(for: attendee)
+        guard name.count >= 3 else { return nil }
+        return DossierIndex.shared.uniqueMatch(name: name, kind: .person)
+    }
+
     /// Unchecked markdown checkboxes in the matched notes — commitments still open with them.
     private static func extractOpenItems(from hits: [NotesKBHit]) -> [String] {
         var items: [String] = []
@@ -196,14 +225,23 @@ enum MeetingPrepService {
         No preamble, no headings: one bullet per line, each starting with "· ".
         """
 
-    private static func whatMattersBullets(event: CalendarEvent, hits: [NotesKBHit]) async -> [String] {
-        guard !hits.isEmpty else { return [] }
+    private static func whatMattersBullets(
+        event: CalendarEvent, hits: [NotesKBHit], dossiers: [Dossier] = []
+    ) async -> [String] {
+        guard !hits.isEmpty || !dossiers.isEmpty else { return [] }
         var material = "Meeting: \(event.summary) at \(event.startTime)"
         if !event.description.isEmpty {
             material += "\n\nAgenda:\n\(String(event.description.prefix(800)))"
         }
-        let notes = hits.prefix(6).map { "[\($0.breadcrumb)]\n\(String($0.chunkText.prefix(1200)))" }
-        material += "\n\nNotes about the attendees:\n" + notes.joined(separator: "\n\n---\n\n")
+        if !dossiers.isEmpty {
+            let files = dossiers.prefix(6).map { "[\($0.name)]\n\(String($0.markdown.prefix(2000)))" }
+            material += "\n\nWhat omi knows about the attendees:\n"
+                + files.joined(separator: "\n\n---\n\n")
+        }
+        if !hits.isEmpty {
+            let notes = hits.prefix(6).map { "[\($0.breadcrumb)]\n\(String($0.chunkText.prefix(1200)))" }
+            material += "\n\nNotes about the attendees:\n" + notes.joined(separator: "\n\n---\n\n")
+        }
 
         do {
             let client = try GeminiClient(

@@ -28,6 +28,14 @@ final class CopilotOrchestrator {
         // Boot user-defined watcher agents (each runs its own loop when enabled).
         WatcherRuntime.shared.start()
 
+        // Housekeeping for the knowledge base — curation and dedup, each at most once a day.
+        // Delayed so a launch isn't competing with the app coming up.
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 90 * 1_000_000_000)
+            DossierGardener.runDailyIfNeeded()
+            DossierMerge.runDailyIfNeeded()
+        }
+
         DesktopAutomationActionRegistry.shared.register(
             name: "copilot_snap",
             summary: "Trigger a Copilot Snap (screenshot + context → predictive answer in the floating bar); "
@@ -150,6 +158,82 @@ final class CopilotOrchestrator {
                 + "(attendees resolved against your notes); returns matched people and bullets."
         ) { _ in
             await MeetingPrepService.debugPrepare()
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
+            name: "dossier_list",
+            summary: "List the entity files omi keeps (people, organizations, projects, topics) "
+                + "with their size and last update."
+        ) { _ in
+            await MainActor.run { () -> [String: String] in
+                let all = DossierStore.shared.all()
+                guard !all.isEmpty else {
+                    return ["count": "0", "root": DossierStore.shared.root.path]
+                }
+                var out: [String: String] = [
+                    "count": String(all.count), "root": DossierStore.shared.root.path,
+                ]
+                for dossier in all {
+                    out[dossier.id] =
+                        "\(dossier.lineCount) lines · updated \(dossier.field("updated") ?? "-")"
+                        + (dossier.isArchived ? " · stale" : "")
+                }
+                return out
+            }
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
+            name: "dossier_search",
+            summary: "Search the entity files and show what matched and why.",
+            params: ["q"]
+        ) { params in
+            guard let query = params["q"], !query.isEmpty else { return ["error": "missing q param"] }
+            return await MainActor.run { () -> [String: String] in
+                let hits = DossierIndex.shared.search(query, limit: 5)
+                guard !hits.isEmpty else { return ["hits": "0"] }
+                var out: [String: String] = ["hits": String(hits.count)]
+                for hit in hits {
+                    out[hit.dossier.id] =
+                        String(format: "%.2f", hit.score) + " · \(hit.reason) · "
+                        + String(hit.dossier.section("Summary").prefix(120))
+                }
+                return out
+            }
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
+            name: "dossier_ingest",
+            summary: "Run entity extraction over the current/last transcript now (normally this "
+                + "happens when a session ends)."
+        ) { _ in
+            let transcript = await MainActor.run { () -> String in
+                let segments = LiveTranscriptMonitor.shared.segments.isEmpty
+                    ? LiveTranscriptMonitor.shared.savedSegments
+                    : LiveTranscriptMonitor.shared.segments
+                return segments.map { "\($0.isUser ? "Me" : "Them"): \($0.text)" }
+                    .joined(separator: "\n")
+            }
+            guard !transcript.isEmpty else { return ["error": "no transcript available"] }
+            let event = await MeetingPrepService.currentEvent()
+            return await DossierWriter.ingest(
+                transcript: transcript, meetingTitle: event?.summary,
+                attendees: event?.attendees ?? [])
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
+            name: "dossier_garden",
+            summary: "Run the daily curation pass now: collapse old activity, promote patterns "
+                + "into standing facts, mark long-quiet files stale."
+        ) { _ in
+            await DossierGardener.run()
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
+            name: "dossier_merge",
+            summary: "Review duplicate-looking entity files and merge the ones that are the same "
+                + "entity (verdicts are remembered)."
+        ) { _ in
+            await DossierMerge.run()
         }
 
         DesktopAutomationActionRegistry.shared.register(

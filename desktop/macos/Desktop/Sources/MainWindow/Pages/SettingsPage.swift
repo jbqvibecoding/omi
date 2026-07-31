@@ -165,6 +165,7 @@ struct SettingsContentView: View {
   @State var copilotAdaptiveEnabled: Bool
   @State var copilotAutoScenario: Bool
   @State var showCopilotProfilesManager = false
+  @State var showDossierBrowser = false
   @State var copilotNotesRagEnabled: Bool
   @State var copilotNotesFolderPath: String
   @State var copilotNotesIndexStatus: String = ""
@@ -172,6 +173,7 @@ struct SettingsContentView: View {
   @State var copilotExportMarkdown: Bool
   @State var copilotMeetingPrep: Bool
   @State var copilotStyleMatching: Bool
+  @State var copilotDossiers: Bool
   @State var showWatchersManager = false
   @State var screenOpOnlyOnChange: Bool
   @State var insightOnlyOnChange: Bool
@@ -460,6 +462,7 @@ struct SettingsContentView: View {
     _copilotExportMarkdown = State(initialValue: CopilotSettings.shared.exportMeetingMarkdown)
     _copilotMeetingPrep = State(initialValue: CopilotSettings.shared.meetingPrepEnabled)
     _copilotStyleMatching = State(initialValue: CopilotSettings.shared.styleMatchingEnabled)
+    _copilotDossiers = State(initialValue: CopilotSettings.shared.dossiersEnabled)
     _screenOpOnlyOnChange = State(initialValue: ScreenOpAssistantSettings.shared.onlyOnSignificantChange)
     _insightOnlyOnChange = State(initialValue: InsightAssistantSettings.shared.onlyOnSignificantChange)
     _insightEnabled = State(initialValue: InsightAssistantSettings.shared.isEnabled)

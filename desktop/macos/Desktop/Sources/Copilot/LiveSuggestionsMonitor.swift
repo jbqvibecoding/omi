@@ -296,6 +296,23 @@ final class LiveSuggestionsMonitor: ObservableObject {
     /// Runs the two-stage pipeline. Returns diagnostics (used by the debug automation action).
     /// Callers must have set `isEvaluating = true`; it is cleared here on all paths.
     @discardableResult
+    /// Dossier facts relevant to what's being said right now, as an evidence block.
+    private func dossierEvidenceBlock(for transcript: String) -> String? {
+        guard CopilotSettings.shared.dossiersEnabled else { return nil }
+        let window = String(transcript.suffix(600))
+        let hits = DossierIndex.shared.search(window, limit: 2)
+        guard !hits.isEmpty else { return nil }
+        let blocks = hits.map { hit -> String in
+            var parts = ["[\(hit.dossier.kind.singular): \(hit.dossier.name)]"]
+            let facts = hit.dossier.section("Key facts")
+            if !facts.isEmpty { parts.append(String(facts.prefix(600))) }
+            let open = hit.dossier.openItems.prefix(3)
+            if !open.isEmpty { parts.append("Open: " + open.joined(separator: "; ")) }
+            return parts.joined(separator: "\n")
+        }
+        return "What you already know about who's involved:\n" + blocks.joined(separator: "\n\n")
+    }
+
     func evaluate(
         transcript: String, cursorAtEval: Double, bypassStaleness: Bool,
         kbHits: [NotesKBHit] = []
@@ -307,6 +324,13 @@ final class LiveSuggestionsMonitor: ObservableObject {
         // Fold the meeting brief in as additional evidence — same untrusted-data framing.
         if let brief = meetingBrief {
             notesEvidence = [notesEvidence, brief.contextBlock]
+                .compactMap { $0 }
+                .joined(separator: "\n\n")
+        }
+        // What omi already knows about whoever/whatever is being discussed. Deterministic
+        // lookup, so it costs nothing and can't drift.
+        if let dossierEvidence = dossierEvidenceBlock(for: transcript) {
+            notesEvidence = [notesEvidence, dossierEvidence]
                 .compactMap { $0 }
                 .joined(separator: "\n\n")
         }

@@ -105,6 +105,15 @@ final class SessionSummaryMonitor: ObservableObject {
                     notesMarkdown: markdown
                 )
             }
+            // Everything above records what was said; this records what it means about the
+            // people and projects involved, so the next meeting starts from it. The calendar
+            // supplies the attendee list — guessing names off audio is exactly how you end
+            // up with a dossier on the wrong person.
+            let event = await MeetingPrepService.currentEvent()
+            await DossierWriter.ingest(
+                transcript: transcript,
+                meetingTitle: event?.summary ?? scenarioName,
+                attendees: event?.attendees ?? [])
             PostHogManager.shared.track(
                 "copilot_session_summary_saved",
                 properties: [
