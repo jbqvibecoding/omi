@@ -153,6 +153,35 @@ final class CopilotOrchestrator {
         }
 
         DesktopAutomationActionRegistry.shared.register(
+            name: "watcher_runs",
+            summary: "Show a watcher's recent runs (time, trigger, status, what it did) and "
+                + "when it is next due.",
+            params: ["id"]
+        ) { params in
+            guard let id = params["id"], !id.isEmpty else { return ["error": "missing id param"] }
+            return await MainActor.run { () -> [String: String] in
+                guard let watcher = WatcherStore.shared.watcher(id: id) else {
+                    return ["error": "no watcher with id \(id)"]
+                }
+                let fmt = DateFormatter()
+                fmt.dateFormat = "MM-dd HH:mm:ss"
+                var out: [String: String] = [
+                    "schedule": watcher.effectiveSchedule.humanLabel,
+                    "enabled": watcher.isEnabled ? "true" : "false",
+                    "fail_count": String(watcher.consecutiveFailures),
+                    "last_run": watcher.lastRunAt.map { fmt.string(from: $0) } ?? "-",
+                    "next_run": watcher.effectiveSchedule.nextFireDate(after: Date())
+                        .map { fmt.string(from: $0) } ?? "-",
+                ]
+                for run in WatcherRunStore.shared.recent(watcherId: id, limit: 20) {
+                    out[fmt.string(from: run.at)] =
+                        "\(run.effectiveStatus.rawValue) · \(run.effectiveTrigger.rawValue) · \(run.summaryLine)"
+                }
+                return out
+            }
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
             name: "copilot_style_dump",
             summary: "Show the learned style card omi uses to make talk tracks sound like you, "
                 + "plus how much of your own speech it learned from."

@@ -29,11 +29,30 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
     /// Standing grants, each binding one action kind to one EXACT target
     /// ("discord https://hooks…"). Never wildcards; minted only by the user.
     var standingGrants: [String]?
+    /// When this watcher runs. nil = the legacy `loopIntervalSeconds` polling loop.
+    var schedule: WatcherSchedule?
+    /// Last *successful* run. Advances only on success, so a failing watcher stays "due"
+    /// and a missed wall-clock run can be caught up after the Mac wakes.
+    var lastRunAt: Date?
+    /// Last attempt of any outcome — the anchor for failure backoff.
+    var lastAttemptAt: Date?
+    /// Consecutive failures. Reset on success; at `maxConsecutiveFailures` the watcher
+    /// pauses itself rather than burning tokens on a broken loop.
+    var failCount: Int?
 
     static let minLoopIntervalSeconds = 15
     static let defaultLoopIntervalSeconds = 60
+    /// Backoff after a failed attempt, so a broken watcher doesn't retry at full speed.
+    static let failureBackoffSeconds: TimeInterval = 300
+    static let maxConsecutiveFailures = 5
 
     var effectiveInterval: Int { max(Self.minLoopIntervalSeconds, loopIntervalSeconds) }
+    /// The schedule to run on, falling back to the interval loop for watchers created
+    /// before schedules existed.
+    var effectiveSchedule: WatcherSchedule {
+        schedule ?? .interval(seconds: effectiveInterval)
+    }
+    var consecutiveFailures: Int { failCount ?? 0 }
     var effectiveBackend: WatcherBackendKind { backend ?? .gemini }
     var effectiveModelId: String? { modelId?.isEmpty == false ? modelId : nil }
     /// Ask before anything leaves this Mac unless the user opted out.
@@ -52,7 +71,11 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
         backend: WatcherBackendKind? = nil,
         modelId: String? = nil,
         approvalPolicy: WatcherApprovalPolicy? = nil,
-        standingGrants: [String]? = nil
+        standingGrants: [String]? = nil,
+        schedule: WatcherSchedule? = nil,
+        lastRunAt: Date? = nil,
+        lastAttemptAt: Date? = nil,
+        failCount: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -66,6 +89,10 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
         self.modelId = modelId
         self.approvalPolicy = approvalPolicy
         self.standingGrants = standingGrants
+        self.schedule = schedule
+        self.lastRunAt = lastRunAt
+        self.lastAttemptAt = lastAttemptAt
+        self.failCount = failCount
     }
 
     // Explicit Codable so adding fields never breaks decoding of previously stored watchers
@@ -74,6 +101,7 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
         case id, name, systemPrompt, loopIntervalSeconds, onlyOnSignificantChange
         case condition, actions, isEnabled, backend, modelId
         case approvalPolicy, standingGrants
+        case schedule, lastRunAt, lastAttemptAt, failCount
     }
 
     init(from decoder: Decoder) throws {
@@ -91,6 +119,10 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
         modelId = try? c.decodeIfPresent(String.self, forKey: .modelId)
         approvalPolicy = try? c.decodeIfPresent(WatcherApprovalPolicy.self, forKey: .approvalPolicy)
         standingGrants = try? c.decodeIfPresent([String].self, forKey: .standingGrants)
+        schedule = try? c.decodeIfPresent(WatcherSchedule.self, forKey: .schedule)
+        lastRunAt = try? c.decodeIfPresent(Date.self, forKey: .lastRunAt)
+        lastAttemptAt = try? c.decodeIfPresent(Date.self, forKey: .lastAttemptAt)
+        failCount = try? c.decodeIfPresent(Int.self, forKey: .failCount)
     }
 }
 

@@ -35,8 +35,10 @@ struct WatchersManagerView: View {
                         ).toggleStyle(.switch).labelsHidden()
                         VStack(alignment: .leading, spacing: 1) {
                             Text(watcher.name).scaledFont(size: 14).foregroundColor(OmiColors.textPrimary)
-                            Text("every \(watcher.effectiveInterval)s · \(watcher.actions.count) action(s)")
-                                .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+                            Text(subtitle(for: watcher))
+                                .scaledFont(size: 11)
+                                .foregroundColor(
+                                    watcher.consecutiveFailures > 0 ? OmiColors.error : OmiColors.textTertiary)
                         }
                         Spacer()
                         Button("Edit") { editing = watcher }.buttonStyle(.plain)
@@ -94,6 +96,18 @@ struct WatchersManagerView: View {
         .sheet(item: $editing) { watcher in
             WatcherEditorView(existing: watcher) { editing = nil }
         }
+    }
+
+    private func subtitle(for watcher: WatcherAgent) -> String {
+        var parts = [watcher.effectiveSchedule.humanLabel, "\(watcher.actions.count) action(s)"]
+        if watcher.consecutiveFailures > 0 {
+            parts.append("failed \(watcher.consecutiveFailures)×")
+        } else if watcher.isEnabled, let next = watcher.effectiveSchedule.nextFireDate(after: Date()) {
+            parts.append("next \(WatcherEditorView.relativeLabel(next))")
+        }
+        let unread = WatcherRunStore.shared.unreadCount(watcherId: watcher.id)
+        if unread > 0 { parts.append("\(unread) new run(s)") }
+        return parts.joined(separator: " · ")
     }
 }
 
@@ -169,6 +183,12 @@ struct WatcherEditorView: View {
     @State private var describeText: String = ""
     @State private var isGenerating = false
     @State private var generationError: String?
+    @State private var scheduleKind: String
+    @State private var scheduleTime: Date
+    @State private var scheduleDate: Date
+    @State private var scheduleDays: [Int]
+    @State private var scheduleDay: Int
+    @State private var cronExpression: String
 
     private let sensorTokens = ["$SCREEN", "$SCREEN_OCR", "$CAMERA", "$CLIPBOARD", "$MEMORY", "$ALL_AUDIO", "$TIME"]
 
@@ -195,6 +215,74 @@ struct WatcherEditorView: View {
         _modelId = State(initialValue: existing?.modelId ?? "")
         _approvalPolicy = State(initialValue: existing?.effectiveApprovalPolicy ?? .ask)
         _standingGrants = State(initialValue: existing?.standingGrantEntries ?? [])
+
+        // Unpack the stored schedule into the editor's flat fields.
+        let calendar = Calendar.current
+        let nineAM = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: Date()) ?? Date()
+        var kind = "interval"
+        var time = nineAM
+        var days = [2]
+        var monthDay = 1
+        var cron = "0 9 * * 1-5"
+        var onceAt = Date().addingTimeInterval(3600)
+        switch existing?.schedule {
+        case let .daily(hour, minute):
+            kind = "daily"
+            time = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: Date()) ?? nineAM
+        case let .weekdays(hour, minute):
+            kind = "weekdays"
+            time = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: Date()) ?? nineAM
+        case let .weekly(weekdays, hour, minute):
+            kind = "weekly"
+            days = weekdays
+            time = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: Date()) ?? nineAM
+        case let .monthly(day, hour, minute):
+            kind = "monthly"
+            monthDay = day
+            time = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: Date()) ?? nineAM
+        case let .cron(expression):
+            kind = "cron"
+            cron = expression
+        case let .once(at):
+            kind = "once"
+            onceAt = at
+        default:
+            kind = "interval"
+        }
+        _scheduleKind = State(initialValue: kind)
+        _scheduleTime = State(initialValue: time)
+        _scheduleDate = State(initialValue: onceAt)
+        _scheduleDays = State(initialValue: days)
+        _scheduleDay = State(initialValue: monthDay)
+        _cronExpression = State(initialValue: cron)
+    }
+
+    private func buildSchedule() -> WatcherSchedule {
+        let parts = Calendar.current.dateComponents([.hour, .minute], from: scheduleTime)
+        let hour = parts.hour ?? 9
+        let minute = parts.minute ?? 0
+        switch scheduleKind {
+        case "daily": return .daily(hour: hour, minute: minute)
+        case "weekdays": return .weekdays(hour: hour, minute: minute)
+        case "weekly":
+            return .weekly(days: scheduleDays.isEmpty ? [2] : scheduleDays.sorted(), hour: hour, minute: minute)
+        case "monthly":
+            return .monthly(day: max(1, min(31, scheduleDay)), hour: hour, minute: minute)
+        case "cron":
+            // An unparseable expression would silently never fire, so fall back to the
+            // interval loop rather than leaving a watcher that looks armed but is dead.
+            return WatcherCron.parse(cronExpression) == nil
+                ? .interval(seconds: max(WatcherAgent.minLoopIntervalSeconds, interval))
+                : .cron(expression: cronExpression)
+        case "once": return .once(at: scheduleDate)
+        default: return .interval(seconds: max(WatcherAgent.minLoopIntervalSeconds, interval))
+        }
+    }
+
+    static func relativeLabel(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 
     var body: some View {
@@ -247,13 +335,81 @@ struct WatcherEditorView: View {
                     }
                 }
 
-                HStack(spacing: 20) {
-                    field("Every (seconds)") {
-                        TextField("60", value: $interval, format: .number).textFieldStyle(.roundedBorder).frame(width: 80)
+                field("When it runs") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Picker("", selection: $scheduleKind) {
+                            Text("Every N seconds").tag("interval")
+                            Text("Every day").tag("daily")
+                            Text("Weekdays").tag("weekdays")
+                            Text("Certain days").tag("weekly")
+                            Text("Monthly").tag("monthly")
+                            Text("Once").tag("once")
+                            Text("Advanced (cron)").tag("cron")
+                        }.pickerStyle(.menu).frame(width: 200)
+
+                        switch scheduleKind {
+                        case "interval":
+                            HStack {
+                                TextField("60", value: $interval, format: .number)
+                                    .textFieldStyle(.roundedBorder).frame(width: 80)
+                                Text("seconds").scaledFont(size: 12).foregroundColor(OmiColors.textTertiary)
+                            }
+                        case "cron":
+                            VStack(alignment: .leading, spacing: 4) {
+                                TextField("0 9 * * 1-5", text: $cronExpression).textFieldStyle(.roundedBorder)
+                                Text(
+                                    WatcherCron.parse(cronExpression) == nil
+                                        ? "Not a valid 5-field cron expression."
+                                        : "minute hour day month weekday · your local time"
+                                )
+                                .scaledFont(size: 11)
+                                .foregroundColor(
+                                    WatcherCron.parse(cronExpression) == nil
+                                        ? OmiColors.error : OmiColors.textTertiary)
+                            }
+                        case "once":
+                            DatePicker("", selection: $scheduleDate).labelsHidden()
+                        default:
+                            VStack(alignment: .leading, spacing: 6) {
+                                if scheduleKind == "weekly" {
+                                    HStack(spacing: 4) {
+                                        ForEach(1...7, id: \.self) { day in
+                                            Button(WatcherSchedule.weekdayName(day)) {
+                                                if scheduleDays.contains(day) {
+                                                    scheduleDays.removeAll { $0 == day }
+                                                } else {
+                                                    scheduleDays.append(day)
+                                                }
+                                            }
+                                            .buttonStyle(.plain).scaledFont(size: 11)
+                                            .foregroundColor(
+                                                scheduleDays.contains(day)
+                                                    ? OmiColors.textPrimary : OmiColors.textTertiary)
+                                        }
+                                    }
+                                }
+                                if scheduleKind == "monthly" {
+                                    HStack {
+                                        Text("Day").scaledFont(size: 12).foregroundColor(OmiColors.textTertiary)
+                                        TextField("1", value: $scheduleDay, format: .number)
+                                            .textFieldStyle(.roundedBorder).frame(width: 50)
+                                    }
+                                }
+                                DatePicker(
+                                    "", selection: $scheduleTime, displayedComponents: .hourAndMinute
+                                ).labelsHidden()
+                            }
+                        }
+
+                        if let next = buildSchedule().nextFireDate(after: Date()) {
+                            Text("Next run \(Self.relativeLabel(next))")
+                                .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+                        }
                     }
-                    Toggle("Only when the screen changes", isOn: $onlyOnChange)
-                        .scaledFont(size: 13).foregroundColor(OmiColors.textPrimary)
                 }
+
+                Toggle("Only when the screen changes", isOn: $onlyOnChange)
+                    .scaledFont(size: 13).foregroundColor(OmiColors.textPrimary)
 
                 field("Before sending anything off this Mac") {
                     VStack(alignment: .leading, spacing: 6) {
@@ -316,6 +472,11 @@ struct WatcherEditorView: View {
                     ForEach($actions) { $action in
                         actionRow($action)
                     }
+                }
+
+                if let existing {
+                    Divider().background(OmiColors.backgroundQuaternary)
+                    WatcherRunHistoryView(watcherId: existing.id)
                 }
 
                 HStack {
@@ -401,7 +562,13 @@ struct WatcherEditorView: View {
             backend: backendKind,
             modelId: backendKind == .ollama ? modelId.trimmingCharacters(in: .whitespaces) : nil,
             approvalPolicy: approvalPolicy,
-            standingGrants: standingGrants.isEmpty ? nil : standingGrants)
+            standingGrants: standingGrants.isEmpty ? nil : standingGrants,
+            schedule: buildSchedule(),
+            lastRunAt: existing?.lastRunAt,
+            lastAttemptAt: existing?.lastAttemptAt,
+            // Editing a broken watcher is the user saying "try again" — clear the strikes
+            // so a fixed watcher isn't still sitting in backoff.
+            failCount: 0)
         WatcherStore.shared.upsert(watcher)
         onDismiss()
     }
@@ -448,6 +615,85 @@ struct WatcherEditorView: View {
         } catch {
             generationError = "Couldn't improve — try editing manually."
         }
+    }
+}
+
+/// What this watcher has actually been doing. An automation you can't see the history of
+/// is one you can't trust, so this is plain: when, why it fired, and what came of it.
+struct WatcherRunHistoryView: View {
+    let watcherId: String
+    @State private var runs: [WatcherRun] = []
+    @State private var unread = 0
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Recent runs").scaledFont(size: 13, weight: .medium)
+                    .foregroundColor(OmiColors.textSecondary)
+                if unread > 0 {
+                    Text("\(unread) new").scaledFont(size: 10)
+                        .foregroundColor(OmiColors.textPrimary)
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(OmiColors.backgroundQuaternary).cornerRadius(4)
+                }
+                Spacer()
+                if !runs.isEmpty {
+                    Button("Clear") {
+                        WatcherRunStore.shared.clear(watcherId: watcherId)
+                        runs = []
+                        unread = 0
+                    }
+                    .buttonStyle(.plain).scaledFont(size: 11).foregroundColor(OmiColors.textSecondary)
+                }
+            }
+
+            if runs.isEmpty {
+                Text("Hasn't run yet.").scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+            } else {
+                ForEach(runs.reversed()) { run in
+                    HStack(alignment: .top, spacing: 6) {
+                        Circle().fill(color(for: run)).frame(width: 6, height: 6).padding(.top, 5)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(run.summaryLine).scaledFont(size: 11)
+                                .foregroundColor(OmiColors.textSecondary).lineLimit(2)
+                            Text(subtitle(for: run)).scaledFont(size: 10)
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+                        Spacer()
+                    }
+                }
+            }
+        }
+        .onAppear {
+            // Freeze the unread count before marking seen, so the badge doesn't vanish
+            // from under the user the instant they open it.
+            unread = WatcherRunStore.shared.unreadCount(watcherId: watcherId)
+            runs = WatcherRunStore.shared.recent(watcherId: watcherId, limit: 20)
+            WatcherRunStore.shared.markSeen(watcherId: watcherId)
+        }
+    }
+
+    private func color(for run: WatcherRun) -> Color {
+        switch run.effectiveStatus {
+        case .ok: return run.conditionMet ? OmiColors.success : OmiColors.textTertiary
+        case .error: return OmiColors.error
+        case .skipped: return OmiColors.warning
+        }
+    }
+
+    private func subtitle(for run: WatcherRun) -> String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "MMM d, HH:mm"
+        var parts = [fmt.string(from: run.at)]
+        switch run.effectiveTrigger {
+        case .schedule: break
+        case .manual: parts.append("run by hand")
+        case .catchup: parts.append("caught up after your Mac woke")
+        case .event: parts.append("triggered by an event")
+        }
+        if run.reused { parts.append("nothing changed, reused last answer") }
+        if let ms = run.durationMs, ms > 0 { parts.append("\(ms) ms") }
+        return parts.joined(separator: " · ")
     }
 }
 

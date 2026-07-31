@@ -15,6 +15,10 @@ final class WatcherRuntime {
         var sleepUntil: Date?
         var lastResponse: String?
         var baseline: WatcherSensorSnapshot?
+        /// The schedule this loop is currently sleeping against — a change means the loop
+        /// has to be restarted, otherwise an edit wouldn't take effect until it woke up
+        /// (which for "daily at 9am" is up to a day later).
+        var schedule: WatcherSchedule?
     }
 
     private var loops: [String: LoopState] = [:]
@@ -48,6 +52,14 @@ final class WatcherRuntime {
             loops.removeValue(forKey: id)
             log("WatcherRuntime: stopped watcher \(id)")
         }
+        // Restart loops whose schedule was edited, so the new timing applies now.
+        for watcher in enabled {
+            guard let state = loops[watcher.id], !state.isExecuting else { continue }
+            guard state.schedule != watcher.effectiveSchedule else { continue }
+            state.task?.cancel()
+            loops.removeValue(forKey: watcher.id)
+            log("WatcherRuntime: rescheduled watcher \(watcher.id) — \(watcher.effectiveSchedule.humanLabel)")
+        }
         // Start loops for newly enabled watchers.
         for watcher in enabled where loops[watcher.id] == nil {
             startLoop(watcher.id)
@@ -63,28 +75,74 @@ final class WatcherRuntime {
     // MARK: - Loop
 
     private func startLoop(_ id: String) {
-        loops[id] = LoopState()
+        var state = LoopState()
+        state.schedule = WatcherStore.shared.watcher(id: id)?.effectiveSchedule
+        loops[id] = state
         let task = Task { [weak self] in
+            var isFirstPass = true
             while !Task.isCancelled {
                 guard let self else { return }
                 guard let watcher = WatcherStore.shared.watcher(id: id), watcher.isEnabled else { break }
-                await self.tickIfReady(watcher)
-                let seconds = watcher.effectiveInterval
-                try? await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
+
+                // A wall-clock run that came due while the Mac was asleep (or the app was
+                // closed) is caught up exactly once on the way back — not replayed for every
+                // occurrence missed, which is how a "daily 9am" watcher fires eight times
+                // after a week away.
+                if isFirstPass, watcher.effectiveSchedule.isWallClock, Self.isOverdue(watcher) {
+                    await self.tickIfReady(watcher, trigger: .catchup)
+                }
+                isFirstPass = false
+
+                guard let fresh = WatcherStore.shared.watcher(id: id), fresh.isEnabled else { break }
+                let sleepSeconds = Self.secondsUntilNextRun(fresh)
+                try? await Task.sleep(nanoseconds: UInt64(sleepSeconds * 1_000_000_000))
+                guard !Task.isCancelled else { break }
+                guard let due = WatcherStore.shared.watcher(id: id), due.isEnabled else { break }
+                await self.tickIfReady(due, trigger: .schedule)
             }
             await MainActor.run { self?.loops.removeValue(forKey: id) }
         }
         loops[id]?.task = task
     }
 
-    private func tickIfReady(_ watcher: WatcherAgent) async {
+    /// A wall-clock schedule is overdue when its next fire after the last success has
+    /// already passed.
+    private static func isOverdue(_ watcher: WatcherAgent) -> Bool {
+        guard let lastRun = watcher.lastRunAt else { return false }
+        guard let due = watcher.effectiveSchedule.nextFireDate(after: lastRun) else { return false }
+        return due <= Date()
+    }
+
+    /// How long to sleep before the next attempt, honoring failure backoff.
+    private static func secondsUntilNextRun(_ watcher: WatcherAgent) -> Double {
+        let now = Date()
+        var next = watcher.effectiveSchedule.nextFireDate(after: now)
+            ?? now.addingTimeInterval(TimeInterval(watcher.effectiveInterval))
+        // After a failure, hold off — a watcher whose model call is broken shouldn't retry
+        // at full speed. The schedule still wins if it's further out.
+        if watcher.consecutiveFailures > 0, let attempt = watcher.lastAttemptAt {
+            let backoff = attempt.addingTimeInterval(WatcherAgent.failureBackoffSeconds)
+            if backoff > next { next = backoff }
+        }
+        return max(1, next.timeIntervalSince(now))
+    }
+
+    private func tickIfReady(_ watcher: WatcherAgent, trigger: WatcherRunTrigger) async {
         guard var state = loops[watcher.id] else { return }
-        if state.isExecuting { return }
+        // Skip-on-overlap: a long run swallows its own next slot rather than stacking.
+        if state.isExecuting {
+            WatcherRunStore.shared.record(
+                WatcherRun(
+                    watcherId: watcher.id, at: Date(), responseHead: "", reused: false,
+                    conditionMet: false, actions: "", error: nil, trigger: trigger,
+                    status: .skipped, durationMs: 0))
+            return
+        }
         if let until = state.sleepUntil, Date() < until { return }
         state.sleepUntil = nil
         state.isExecuting = true
         loops[watcher.id] = state
-        _ = await runTick(watcher)
+        _ = await runTick(watcher, trigger: trigger)
         loops[watcher.id]?.isExecuting = false
     }
 
@@ -92,7 +150,10 @@ final class WatcherRuntime {
 
     /// Runs one iteration and returns diagnostics (also used by the omi-ctl force-run).
     @discardableResult
-    func runTick(_ watcher: WatcherAgent, force: Bool = false) async -> [String: String] {
+    func runTick(
+        _ watcher: WatcherAgent, force: Bool = false, trigger: WatcherRunTrigger = .manual
+    ) async -> [String: String] {
+        let startedAt = Date()
         let resolved = await WatcherSensorResolver.resolve(
             prompt: watcher.systemPrompt, watcherId: watcher.id)
         let snapshot = PerceptualChangeDetector.snapshot(
@@ -112,6 +173,13 @@ final class WatcherRuntime {
                 response = try await callModel(watcher: watcher, prompt: resolved.text, images: resolved.images)
             } catch {
                 logError("WatcherRuntime: model call failed for \(watcher.id)", error: error)
+                WatcherRunStore.shared.record(
+                    WatcherRun(
+                        watcherId: watcher.id, at: Date(), responseHead: "", reused: false,
+                        conditionMet: false, actions: "", error: error.localizedDescription,
+                        trigger: trigger, status: .error,
+                        durationMs: Int(Date().timeIntervalSince(startedAt) * 1000)))
+                recordFailure(watcher)
                 return ["error": error.localizedDescription]
             }
             if loops[watcher.id] != nil {
@@ -138,7 +206,9 @@ final class WatcherRuntime {
             WatcherRun(
                 watcherId: watcher.id, at: Date(), responseHead: String(response.prefix(120)),
                 reused: reused, conditionMet: conditionMet,
-                actions: actionsRun.joined(separator: ","), error: nil))
+                actions: actionsRun.joined(separator: ","), error: nil, trigger: trigger,
+                status: .ok, durationMs: Int(Date().timeIntervalSince(startedAt) * 1000)))
+        recordSuccess(watcher)
 
         log(
             "WatcherRuntime: tick \(watcher.id) — reused=\(reused) condition=\(conditionMet) "
@@ -150,6 +220,47 @@ final class WatcherRuntime {
             "actions": actionsRun.joined(separator: ","),
             "sensors": WatcherSensorResolver.referencedSensors(in: watcher.systemPrompt).joined(separator: ","),
         ]
+    }
+
+    // MARK: - Run health
+
+    /// `lastRunAt` advances only here, so a wall-clock watcher that failed still reads as
+    /// overdue and gets caught up rather than quietly skipping the day.
+    private func recordSuccess(_ watcher: WatcherAgent) {
+        guard var stored = WatcherStore.shared.watcher(id: watcher.id) else { return }
+        let now = Date()
+        // A fast polling watcher would otherwise rewrite the store (and wake every observer)
+        // once a minute forever. Wall-clock schedules always persist — catch-up depends on it.
+        if !stored.effectiveSchedule.isWallClock, stored.consecutiveFailures == 0,
+            let last = stored.lastRunAt, now.timeIntervalSince(last) < 300
+        {
+            return
+        }
+        stored.lastRunAt = now
+        stored.lastAttemptAt = now
+        stored.failCount = 0
+        // A one-shot schedule is done the moment it succeeds.
+        if case .once = stored.effectiveSchedule {
+            stored.isEnabled = false
+        }
+        WatcherStore.shared.upsert(stored)
+    }
+
+    private func recordFailure(_ watcher: WatcherAgent) {
+        guard var stored = WatcherStore.shared.watcher(id: watcher.id) else { return }
+        let failures = stored.consecutiveFailures + 1
+        stored.lastAttemptAt = Date()
+        stored.failCount = failures
+        if failures >= WatcherAgent.maxConsecutiveFailures {
+            stored.isEnabled = false
+            NotificationService.shared.sendNotification(
+                title: "\(stored.name) paused",
+                message: "It failed \(failures) times in a row, so omi stopped running it. "
+                    + "Open Watchers to check its setup.",
+                assistantId: "watcher", sound: .none, respectFrequency: false)
+            log("WatcherRuntime: auto-paused \(stored.id) after \(failures) consecutive failures")
+        }
+        WatcherStore.shared.upsert(stored)
     }
 
     private func callModel(watcher: WatcherAgent, prompt: String, images: [Data]) async throws -> String {
