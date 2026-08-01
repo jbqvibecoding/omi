@@ -39,6 +39,16 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
     /// Consecutive failures. Reset on success; at `maxConsecutiveFailures` the watcher
     /// pauses itself rather than burning tokens on a broken loop.
     var failCount: Int?
+    /// Let the model decide when to look again (it returns `next_check_seconds`). Useful
+    /// for a watcher whose subject has an obvious rhythm — a build that just started
+    /// doesn't need checking for ten minutes.
+    var allowSelfPacing: Bool?
+    /// Plain-English description of the events this watcher cares about
+    /// ("anything about a competitor launch"). nil = schedule-driven only.
+    var eventMatchCriteria: String?
+    /// `action` (default) fires the declarative actions; `document` maintains a live
+    /// markdown file instead.
+    var mode: String?
 
     static let minLoopIntervalSeconds = 15
     static let defaultLoopIntervalSeconds = 60
@@ -53,6 +63,13 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
         schedule ?? .interval(seconds: effectiveInterval)
     }
     var consecutiveFailures: Int { failCount ?? 0 }
+    var isSelfPaced: Bool { allowSelfPacing ?? false }
+    var isDocumentMode: Bool { mode == "document" }
+    /// Trimmed event criteria, or nil when this watcher doesn't listen for events.
+    var eventCriteria: String? {
+        let value = (eventMatchCriteria ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
     var effectiveBackend: WatcherBackendKind { backend ?? .gemini }
     var effectiveModelId: String? { modelId?.isEmpty == false ? modelId : nil }
     /// Ask before anything leaves this Mac unless the user opted out.
@@ -75,7 +92,10 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
         schedule: WatcherSchedule? = nil,
         lastRunAt: Date? = nil,
         lastAttemptAt: Date? = nil,
-        failCount: Int? = nil
+        failCount: Int? = nil,
+        allowSelfPacing: Bool? = nil,
+        eventMatchCriteria: String? = nil,
+        mode: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -93,6 +113,9 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
         self.lastRunAt = lastRunAt
         self.lastAttemptAt = lastAttemptAt
         self.failCount = failCount
+        self.allowSelfPacing = allowSelfPacing
+        self.eventMatchCriteria = eventMatchCriteria
+        self.mode = mode
     }
 
     // Explicit Codable so adding fields never breaks decoding of previously stored watchers
@@ -102,6 +125,7 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
         case condition, actions, isEnabled, backend, modelId
         case approvalPolicy, standingGrants
         case schedule, lastRunAt, lastAttemptAt, failCount
+        case allowSelfPacing, eventMatchCriteria, mode
     }
 
     init(from decoder: Decoder) throws {
@@ -123,6 +147,9 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
         lastRunAt = try? c.decodeIfPresent(Date.self, forKey: .lastRunAt)
         lastAttemptAt = try? c.decodeIfPresent(Date.self, forKey: .lastAttemptAt)
         failCount = try? c.decodeIfPresent(Int.self, forKey: .failCount)
+        allowSelfPacing = try? c.decodeIfPresent(Bool.self, forKey: .allowSelfPacing)
+        eventMatchCriteria = try? c.decodeIfPresent(String.self, forKey: .eventMatchCriteria)
+        mode = try? c.decodeIfPresent(String.self, forKey: .mode)
     }
 }
 

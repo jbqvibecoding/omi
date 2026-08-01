@@ -100,6 +100,9 @@ final class MeetingAutoDetectMonitor {
         }
         MeetingPrepService.markBriefed(eventId: event.id)
         presentBrief(brief)
+        // Watchers listening for "a meeting about X is coming up" get a shot at this too.
+        WatcherEventRouter.calendarEventStarting(
+            title: event.summary, detail: brief.contextBlock)
     }
 
     private func presentBrief(_ brief: MeetingPrepBrief) {

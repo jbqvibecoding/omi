@@ -31,11 +31,13 @@ struct WatcherRun: Codable, Identifiable, Equatable {
     let trigger: WatcherRunTrigger?
     let status: WatcherRunStatus?
     let durationMs: Int?
+    /// Directory of files this run produced, when it produced any.
+    let artifactsPath: String?
 
     init(
         watcherId: String, at: Date, responseHead: String, reused: Bool, conditionMet: Bool,
         actions: String, error: String?, trigger: WatcherRunTrigger? = nil,
-        status: WatcherRunStatus? = nil, durationMs: Int? = nil
+        status: WatcherRunStatus? = nil, durationMs: Int? = nil, artifactsPath: String? = nil
     ) {
         self.watcherId = watcherId
         self.at = at
@@ -47,6 +49,7 @@ struct WatcherRun: Codable, Identifiable, Equatable {
         self.trigger = trigger
         self.status = status
         self.durationMs = durationMs
+        self.artifactsPath = artifactsPath
     }
 
     var effectiveStatus: WatcherRunStatus {

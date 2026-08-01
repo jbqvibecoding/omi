@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Lists user-defined watchers and channel credentials; entry point for creating/editing.
@@ -189,6 +190,9 @@ struct WatcherEditorView: View {
     @State private var scheduleDays: [Int]
     @State private var scheduleDay: Int
     @State private var cronExpression: String
+    @State private var allowSelfPacing: Bool
+    @State private var eventCriteria: String
+    @State private var documentMode: Bool
 
     private let sensorTokens = ["$SCREEN", "$SCREEN_OCR", "$CAMERA", "$CLIPBOARD", "$MEMORY", "$ALL_AUDIO", "$TIME"]
 
@@ -255,6 +259,9 @@ struct WatcherEditorView: View {
         _scheduleDays = State(initialValue: days)
         _scheduleDay = State(initialValue: monthDay)
         _cronExpression = State(initialValue: cron)
+        _allowSelfPacing = State(initialValue: existing?.isSelfPaced ?? false)
+        _eventCriteria = State(initialValue: existing?.eventCriteria ?? "")
+        _documentMode = State(initialValue: existing?.isDocumentMode ?? false)
     }
 
     private func buildSchedule() -> WatcherSchedule {
@@ -411,6 +418,43 @@ struct WatcherEditorView: View {
                 Toggle("Only when the screen changes", isOn: $onlyOnChange)
                     .scaledFont(size: 13).foregroundColor(OmiColors.textPrimary)
 
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle("Let it decide when to look again", isOn: $allowSelfPacing)
+                        .scaledFont(size: 13).foregroundColor(OmiColors.textPrimary)
+                    Text("It can ask to be woken sooner than the schedule when something is about to change. It can never ask to skip a run.")
+                        .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+                }
+
+                field("Also run when something happens (optional)") {
+                    VStack(alignment: .leading, spacing: 4) {
+                        TextField(
+                            "e.g. any meeting where a competitor launch comes up",
+                            text: $eventCriteria
+                        ).textFieldStyle(.roundedBorder)
+                        Text("Plain English. Leave empty to run on the schedule only.")
+                            .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+                    }
+                }
+
+                field("What it does") {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Picker("", selection: $documentMode) {
+                            Text("Take actions").tag(false)
+                            Text("Keep a document up to date").tag(true)
+                        }.pickerStyle(.radioGroup)
+                        if documentMode {
+                            Text(
+                                "Writes to "
+                                    + WatcherDocument.directory
+                                    .appendingPathComponent(
+                                        "\(WatcherDocument.safeName(name)).md"
+                                    ).path)
+                                .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+                                .lineLimit(1).truncationMode(.middle)
+                        }
+                    }
+                }
+
                 field("Before sending anything off this Mac") {
                     VStack(alignment: .leading, spacing: 6) {
                         Picker("", selection: $approvalPolicy) {
@@ -461,16 +505,20 @@ struct WatcherEditorView: View {
                     }
                 }
 
-                // Actions
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("Actions").scaledFont(size: 13, weight: .medium).foregroundColor(OmiColors.textSecondary)
-                        Spacer()
-                        Button("Add action") { actions.append(EditableAction()) }
-                            .buttonStyle(.plain).scaledFont(size: 12).foregroundColor(OmiColors.textSecondary)
-                    }
-                    ForEach($actions) { $action in
-                        actionRow($action)
+                // Actions — irrelevant in document mode, where the file is the output.
+                if !documentMode {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("Actions").scaledFont(size: 13, weight: .medium)
+                                .foregroundColor(OmiColors.textSecondary)
+                            Spacer()
+                            Button("Add action") { actions.append(EditableAction()) }
+                                .buttonStyle(.plain).scaledFont(size: 12)
+                                .foregroundColor(OmiColors.textSecondary)
+                        }
+                        ForEach($actions) { $action in
+                            actionRow($action)
+                        }
                     }
                 }
 
@@ -568,7 +616,10 @@ struct WatcherEditorView: View {
             lastAttemptAt: existing?.lastAttemptAt,
             // Editing a broken watcher is the user saying "try again" — clear the strikes
             // so a fixed watcher isn't still sitting in backoff.
-            failCount: 0)
+            failCount: 0,
+            allowSelfPacing: allowSelfPacing,
+            eventMatchCriteria: eventCriteria.trimmingCharacters(in: .whitespacesAndNewlines),
+            mode: documentMode ? "document" : "action")
         WatcherStore.shared.upsert(watcher)
         onDismiss()
     }
@@ -660,6 +711,16 @@ struct WatcherRunHistoryView: View {
                                 .foregroundColor(OmiColors.textTertiary)
                         }
                         Spacer()
+                        if let path = run.artifactsPath {
+                            Button("Files") {
+                                NSWorkspace.shared.activateFileViewerSelecting([
+                                    URL(fileURLWithPath: path)
+                                ])
+                            }
+                            .buttonStyle(.plain).scaledFont(size: 10)
+                            .foregroundColor(OmiColors.textSecondary)
+                            .help("Show what this run produced in Finder")
+                        }
                     }
                 }
             }

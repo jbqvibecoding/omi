@@ -114,6 +114,11 @@ final class SessionSummaryMonitor: ObservableObject {
                 transcript: transcript,
                 meetingTitle: event?.summary ?? scenarioName,
                 attendees: event?.attendees ?? [])
+            // Wake any watcher whose job is described in terms of what happens in meetings.
+            await MainActor.run {
+                WatcherEventRouter.meetingNotesReady(
+                    title: event?.summary ?? scenarioName, summary: markdown)
+            }
             PostHogManager.shared.track(
                 "copilot_session_summary_saved",
                 properties: [

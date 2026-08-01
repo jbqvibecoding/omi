@@ -19,12 +19,23 @@ final class WatcherRuntime {
         /// has to be restarted, otherwise an edit wouldn't take effect until it woke up
         /// (which for "daily at 9am" is up to a day later).
         var schedule: WatcherSchedule?
+        /// When a self-pacing watcher asked to be woken next.
+        var selfPacedUntil: Date?
     }
 
     private var loops: [String: LoopState] = [:]
     private var started = false
 
+    /// Upper bound on a self-paced wake-up. A watcher that asks for a week off is almost
+    /// certainly wrong, and a day is short enough that the mistake is cheap.
+    private static let maxSelfPacedInterval: TimeInterval = 24 * 3600
+
     private init() {}
+
+    /// Identifier for one run, used to name its artifacts directory.
+    static func runId(at date: Date) -> String {
+        "\(DossierStore.fileStamp(date))-\(String(UUID().uuidString.prefix(4)).lowercased())"
+    }
 
     // MARK: - Lifecycle
 
@@ -94,7 +105,8 @@ final class WatcherRuntime {
                 isFirstPass = false
 
                 guard let fresh = WatcherStore.shared.watcher(id: id), fresh.isEnabled else { break }
-                let sleepSeconds = Self.secondsUntilNextRun(fresh)
+                let sleepSeconds = Self.secondsUntilNextRun(
+                    fresh, selfPacedUntil: self.loops[id]?.selfPacedUntil)
                 try? await Task.sleep(nanoseconds: UInt64(sleepSeconds * 1_000_000_000))
                 guard !Task.isCancelled else { break }
                 guard let due = WatcherStore.shared.watcher(id: id), due.isEnabled else { break }
@@ -113,11 +125,18 @@ final class WatcherRuntime {
         return due <= Date()
     }
 
-    /// How long to sleep before the next attempt, honoring failure backoff.
-    private static func secondsUntilNextRun(_ watcher: WatcherAgent) -> Double {
+    /// How long to sleep before the next attempt, honoring self-pacing and failure backoff.
+    private static func secondsUntilNextRun(_ watcher: WatcherAgent, selfPacedUntil: Date? = nil)
+        -> Double
+    {
         let now = Date()
         var next = watcher.effectiveSchedule.nextFireDate(after: now)
             ?? now.addingTimeInterval(TimeInterval(watcher.effectiveInterval))
+        // A self-paced watcher just told us when it wants to look again. Take whichever
+        // comes first — the model can ask to be woken sooner, never to skip its schedule.
+        if watcher.isSelfPaced, let asked = selfPacedUntil, asked > now, asked < next {
+            next = asked
+        }
         // After a failure, hold off — a watcher whose model call is broken shouldn't retry
         // at full speed. The schedule still wins if it's further out.
         if watcher.consecutiveFailures > 0, let attempt = watcher.lastAttemptAt {
@@ -125,6 +144,21 @@ final class WatcherRuntime {
             if backoff > next { next = backoff }
         }
         return max(1, next.timeIntervalSince(now))
+    }
+
+    /// Reads an optional `next_check_seconds: N` the model may append when self-pacing is on.
+    /// Clamped hard — the model gets to hint, not to decide it never runs again.
+    static func parseSelfPacedInterval(from response: String) -> TimeInterval? {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"next_check_seconds\D{0,4}(\d+)"#, options: [.caseInsensitive])
+        else { return nil }
+        let range = NSRange(response.startIndex..., in: response)
+        guard let match = regex.firstMatch(in: response, range: range),
+            let numberRange = Range(match.range(at: 1), in: response),
+            let seconds = Double(response[numberRange])
+        else { return nil }
+        return min(
+            max(seconds, Double(WatcherAgent.minLoopIntervalSeconds)), maxSelfPacedInterval)
     }
 
     private func tickIfReady(_ watcher: WatcherAgent, trigger: WatcherRunTrigger) async {
@@ -151,13 +185,23 @@ final class WatcherRuntime {
     /// Runs one iteration and returns diagnostics (also used by the omi-ctl force-run).
     @discardableResult
     func runTick(
-        _ watcher: WatcherAgent, force: Bool = false, trigger: WatcherRunTrigger = .manual
+        _ watcher: WatcherAgent, force: Bool = false, trigger: WatcherRunTrigger = .manual,
+        event: WatcherEvent? = nil
     ) async -> [String: String] {
         let startedAt = Date()
+        let runId = WatcherRuntime.runId(at: startedAt)
         let resolved = await WatcherSensorResolver.resolve(
             prompt: watcher.systemPrompt, watcherId: watcher.id)
+        var prompt = resolved.text
+        if let event {
+            // Second pass of event routing: the router was told to be liberal, so the
+            // watcher itself gets the final say on whether this is actually its business.
+            prompt =
+                "\(event.promptBlock)\n\nIf, having looked properly, this event is not what "
+                + "you watch for, say so plainly and do nothing else.\n\n\(prompt)"
+        }
         let snapshot = PerceptualChangeDetector.snapshot(
-            text: resolved.text, image: resolved.images.first)
+            text: prompt, image: resolved.images.first)
 
         var response: String
         var reused = false
@@ -170,7 +214,7 @@ final class WatcherRuntime {
             reused = true
         } else {
             do {
-                response = try await callModel(watcher: watcher, prompt: resolved.text, images: resolved.images)
+                response = try await callModel(watcher: watcher, prompt: prompt, images: resolved.images)
             } catch {
                 logError("WatcherRuntime: model call failed for \(watcher.id)", error: error)
                 WatcherRunStore.shared.record(
@@ -188,26 +232,45 @@ final class WatcherRuntime {
             }
         }
 
-        let conditionMet = watcher.condition.isMet(response: response)
+        // Self-pacing: the model may say when it wants to look again. Recorded before the
+        // condition runs, so it applies even on a tick that decides to do nothing.
+        if watcher.isSelfPaced, let asked = Self.parseSelfPacedInterval(from: response) {
+            loops[watcher.id]?.selfPacedUntil = Date().addingTimeInterval(asked)
+            log("WatcherRuntime: \(watcher.id) asked to be woken in \(Int(asked))s")
+        }
+
+        let artifactsDirectory = WatcherArtifacts.prepare(for: watcher, runId: runId)
+        var conditionMet = watcher.condition.isMet(response: response)
         var actionsRun: [String] = []
-        if conditionMet {
+        if watcher.isDocumentMode {
+            // A document watcher doesn't interrupt anyone — it keeps a file current. The
+            // declarative condition/actions don't apply.
+            conditionMet = true
+            actionsRun.append(
+                await WatcherDocument.update(
+                    watcher: watcher, observation: response, snapshotTo: artifactsDirectory))
+        } else if conditionMet {
             // One key per (watcher, tick, action slot) so a replayed tick reuses the same
             // approval item instead of asking the user twice.
-            let tickKey = "\(watcher.id):\(Int(Date().timeIntervalSince1970))"
             for (index, action) in watcher.actions.enumerated() {
                 let label = await execute(
                     action, watcher: watcher, response: response,
-                    actionKey: "\(tickKey):\(index)")
+                    actionKey: "\(watcher.id):\(runId):\(index)")
                 actionsRun.append(label)
             }
         }
+
+        // Anything the run left behind in its own output directory is worth keeping a
+        // pointer to; a run that produced nothing doesn't get a folder at all.
+        let producedArtifacts = !WatcherArtifacts.files(in: artifactsDirectory).isEmpty
 
         WatcherRunStore.shared.record(
             WatcherRun(
                 watcherId: watcher.id, at: Date(), responseHead: String(response.prefix(120)),
                 reused: reused, conditionMet: conditionMet,
                 actions: actionsRun.joined(separator: ","), error: nil, trigger: trigger,
-                status: .ok, durationMs: Int(Date().timeIntervalSince(startedAt) * 1000)))
+                status: .ok, durationMs: Int(Date().timeIntervalSince(startedAt) * 1000),
+                artifactsPath: producedArtifacts ? artifactsDirectory.path : nil))
         recordSuccess(watcher)
 
         log(
@@ -264,9 +327,22 @@ final class WatcherRuntime {
     }
 
     private func callModel(watcher: WatcherAgent, prompt: String, images: [Data]) async throws -> String {
-        let systemPrompt =
+        var systemPrompt =
             "You are a watcher agent. Follow the user's instruction below and respond concisely. "
             + "Your response is evaluated by a rule to decide whether to act."
+        if watcher.isDocumentMode {
+            systemPrompt =
+                "You are a watcher agent. Follow the user's instruction below and report what "
+                + "you observe, concisely and factually. Your report is folded into a living "
+                + "document, so state what is true now rather than narrating the check itself."
+        }
+        if watcher.isSelfPaced {
+            // A hint, not a decision — the runtime clamps whatever comes back.
+            systemPrompt +=
+                "\n\nWhen you can tell how soon this is worth checking again, end your reply "
+                + "with a line `next_check_seconds: N`. Base it on what you just saw — "
+                + "something that just started needs longer than something about to finish."
+        }
         let backend = WatcherInferenceBackendFactory.make(for: watcher)
         return try await backend.complete(
             systemPrompt: systemPrompt, userPrompt: prompt, images: images)

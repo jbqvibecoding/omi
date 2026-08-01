@@ -491,6 +491,8 @@ final class LiveSuggestionsMonitor: ObservableObject {
         } else {
             log("LiveSuggestionsMonitor: presenting — suppressed non-audience card (\(gateType))")
         }
+        WatcherEventRouter.copilotSuggested(
+            headline: result.headline, suggestion: result.suggestion)
         suggestionsThisSession.append(result.suggestion)
         lastSuggestionAt = Date()
 

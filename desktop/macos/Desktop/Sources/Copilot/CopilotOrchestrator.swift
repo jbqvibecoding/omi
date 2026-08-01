@@ -161,6 +161,29 @@ final class CopilotOrchestrator {
         }
 
         DesktopAutomationActionRegistry.shared.register(
+            name: "watcher_event",
+            summary: "Publish a test event to the watcher event router and report which "
+                + "watchers it woke.",
+            params: ["kind", "title", "summary"]
+        ) { params in
+            let event = WatcherEvent(
+                kind: params["kind"] ?? "test.event",
+                title: params["title"] ?? "Test event",
+                summary: params["summary"] ?? "")
+            let listeners = await MainActor.run {
+                WatcherStore.shared.watchers.filter { $0.isEnabled && $0.eventCriteria != nil }
+            }
+            guard !listeners.isEmpty else {
+                return ["error": "no enabled watcher has an event criteria set"]
+            }
+            let woken = await WatcherEventRouter.route(event, listeners: listeners)
+            return [
+                "listeners": listeners.map(\.id).joined(separator: ","),
+                "woke": woken.isEmpty ? "(none matched)" : woken.joined(separator: ","),
+            ]
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
             name: "dossier_list",
             summary: "List the entity files omi keeps (people, organizations, projects, topics) "
                 + "with their size and last update."
