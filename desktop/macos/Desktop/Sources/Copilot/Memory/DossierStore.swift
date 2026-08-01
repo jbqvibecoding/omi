@@ -19,6 +19,20 @@ enum DossierKind: String, Codable, CaseIterable {
     }
 }
 
+/// One frontmatter line. A struct rather than a tuple so it works as a key path target
+/// and gives `Dossier` a synthesized `==`.
+struct DossierField: Equatable {
+    let key: String
+    var value: String
+}
+
+/// A dated copy of a dossier taken before a write, so any change is reversible.
+struct DossierSnapshot: Identifiable, Equatable {
+    var id: String { stamp }
+    let stamp: String
+    let url: URL
+}
+
 /// One entity file: YAML-ish frontmatter plus a fixed set of markdown sections.
 ///
 /// A flat markdown file rather than a database, for the reason Ami gives: the user can
@@ -29,15 +43,9 @@ struct Dossier: Identifiable, Equatable {
     let kind: DossierKind
     let slug: String
     /// Frontmatter fields, order-preserved for stable rewrites.
-    var fields: [(key: String, value: String)]
+    var fields: [DossierField]
     /// Everything below the frontmatter.
     var body: String
-
-    static func == (lhs: Dossier, rhs: Dossier) -> Bool {
-        lhs.kind == rhs.kind && lhs.slug == rhs.slug && lhs.body == rhs.body
-            && lhs.fields.map(\.key) == rhs.fields.map(\.key)
-            && lhs.fields.map(\.value) == rhs.fields.map(\.value)
-    }
 
     func field(_ key: String) -> String? {
         fields.first { $0.key.lowercased() == key.lowercased() }?.value
@@ -47,7 +55,7 @@ struct Dossier: Identifiable, Equatable {
         if let idx = fields.firstIndex(where: { $0.key.lowercased() == key.lowercased() }) {
             fields[idx].value = value
         } else {
-            fields.append((key: key, value: value))
+            fields.append(DossierField(key: key, value: value))
         }
     }
 
@@ -238,13 +246,18 @@ final class DossierStore: ObservableObject {
         pruneSnapshots(kind: kind, slug: slug)
     }
 
-    func snapshots(kind: DossierKind, slug: String) -> [(stamp: String, url: URL)] {
+    func snapshots(kind: DossierKind, slug: String) -> [DossierSnapshot] {
         let dir = historyDirectory(for: kind)
         let contents =
             (try? fileManager.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
         return contents
             .filter { $0.lastPathComponent.hasPrefix("\(slug)@") }
-            .map { (stamp: $0.deletingPathExtension().lastPathComponent.components(separatedBy: "@").last ?? "", url: $0) }
+            .map { url in
+                DossierSnapshot(
+                    stamp: url.deletingPathExtension().lastPathComponent
+                        .components(separatedBy: "@").last ?? "",
+                    url: url)
+            }
             .sorted { $0.stamp > $1.stamp }
     }
 
@@ -268,7 +281,7 @@ final class DossierStore: ObservableObject {
     // MARK: - Parsing
 
     static func parse(_ text: String, kind: DossierKind, slug: String) -> Dossier? {
-        var fields: [(key: String, value: String)] = []
+        var fields: [DossierField] = []
         var body = text
         if text.hasPrefix("---") {
             let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
@@ -278,7 +291,7 @@ final class DossierStore: ObservableObject {
                 if let colon = line.firstIndex(of: ":") {
                     let key = String(line[line.startIndex..<colon]).trimmingCharacters(in: .whitespaces)
                     let value = String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
-                    if !key.isEmpty { fields.append((key: key, value: value)) }
+                    if !key.isEmpty { fields.append(DossierField(key: key, value: value)) }
                 }
                 index += 1
             }
@@ -330,15 +343,15 @@ final class DossierStore: ObservableObject {
 
     /// The empty shape a new dossier starts from — the same sections every time, so the
     /// writer prompt and the reader both know where things live.
-    static func template(kind: DossierKind, name: String, extraFields: [(String, String)] = []) -> Dossier {
-        var fields: [(key: String, value: String)] = [
-            ("type", kind.singular.lowercased()),
-            ("name", name),
-            ("created", iso(Date())),
-            ("updated", iso(Date())),
+    static func template(kind: DossierKind, name: String, extraFields: [DossierField] = []) -> Dossier {
+        var fields: [DossierField] = [
+            DossierField(key: "type", value: kind.singular.lowercased()),
+            DossierField(key: "name", value: name),
+            DossierField(key: "created", value: iso(Date())),
+            DossierField(key: "updated", value: iso(Date())),
         ]
-        for extra in extraFields where !extra.1.isEmpty {
-            fields.append((key: extra.0, value: extra.1))
+        for extra in extraFields where !extra.value.isEmpty {
+            fields.append(extra)
         }
         let body = """
             # \(name)

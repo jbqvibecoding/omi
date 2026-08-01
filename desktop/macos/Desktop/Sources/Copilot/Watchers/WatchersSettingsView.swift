@@ -324,24 +324,33 @@ struct WatcherEditorView: View {
 
                 Divider().background(OmiColors.backgroundQuaternary)
 
-                field("Name") {
-                    TextField("Watcher name", text: $name).textFieldStyle(.roundedBorder)
-                }
-                field("Instruction (use sensor placeholders)") {
-                    VStack(alignment: .leading, spacing: 4) {
-                        TextEditor(text: $systemPrompt)
-                            .font(.system(size: 12)).frame(minHeight: 100)
-                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(OmiColors.backgroundQuaternary))
-                        HStack {
-                            ForEach(sensorTokens, id: \.self) { token in
-                                Button(token) { systemPrompt += (systemPrompt.isEmpty ? "" : " ") + token }
+                // Grouped by what the user is deciding — which also keeps this block inside
+                // ViewBuilder's ten-child limit.
+                Group {
+                    field("Name") {
+                        TextField("Watcher name", text: $name).textFieldStyle(.roundedBorder)
+                    }
+                    field("Instruction (use sensor placeholders)") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            TextEditor(text: $systemPrompt)
+                                .font(.system(size: 12)).frame(minHeight: 100)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(OmiColors.backgroundQuaternary))
+                            HStack {
+                                ForEach(sensorTokens, id: \.self) { token in
+                                    Button(token) {
+                                        systemPrompt += (systemPrompt.isEmpty ? "" : " ") + token
+                                    }
                                     .buttonStyle(.plain).scaledFont(size: 10)
                                     .foregroundColor(OmiColors.textSecondary)
+                                }
                             }
                         }
                     }
                 }
 
+                Group {
                 field("When it runs") {
                     VStack(alignment: .leading, spacing: 8) {
                         Picker("", selection: $scheduleKind) {
@@ -435,7 +444,9 @@ struct WatcherEditorView: View {
                             .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
                     }
                 }
+                }
 
+                Group {
                 field("What it does") {
                     VStack(alignment: .leading, spacing: 4) {
                         Picker("", selection: $documentMode) {
@@ -520,6 +531,7 @@ struct WatcherEditorView: View {
                             actionRow($action)
                         }
                     }
+                }
                 }
 
                 if let existing {

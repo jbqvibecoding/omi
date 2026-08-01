@@ -149,7 +149,7 @@ struct DossierBrowserView: View {
                 if !history.isEmpty {
                     Text("Earlier versions").scaledFont(size: 11)
                         .foregroundColor(OmiColors.textSecondary)
-                    ForEach(history.prefix(5), id: \.stamp) { snapshot in
+                    ForEach(history.prefix(5)) { snapshot in
                         HStack {
                             Text(snapshot.stamp).scaledFont(size: 10)
                                 .foregroundColor(OmiColors.textTertiary)

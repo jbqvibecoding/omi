@@ -176,7 +176,7 @@ final class WatcherApprovalStore: ObservableObject {
 
     /// Items answered while the user was away, for the "here's what happened" recap.
     func recentlyResolved(limit: Int = 10) -> [WatcherApprovalItem] {
-        items.filter { !$0.isPending }.suffix(limit).reversed()
+        Array(items.filter { !$0.isPending }.suffix(limit).reversed())
     }
 
     func clearResolved() {

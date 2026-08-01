@@ -51,32 +51,38 @@ extension SettingsContentView {
                             isOn: $copilotMeetingPrep
                         ) { CopilotSettings.shared.meetingPrepEnabled = $0 }
 
-                        copilotSubToggle(
-                            title: "Sound like me",
-                            subtitle:
-                                "Rewrites the line you can say out loud in your own voice, learned from how you actually talk.",
-                            isOn: $copilotStyleMatching
-                        ) { CopilotSettings.shared.styleMatchingEnabled = $0 }
+                        // Each toggle is grouped with the detail it reveals, which also keeps
+                        // this block inside ViewBuilder's ten-child limit.
+                        Group {
+                            copilotSubToggle(
+                                title: "Sound like me",
+                                subtitle:
+                                    "Rewrites the line you can say out loud in your own voice, learned from how you actually talk.",
+                                isOn: $copilotStyleMatching
+                            ) { CopilotSettings.shared.styleMatchingEnabled = $0 }
 
-                        if copilotStyleMatching {
-                            copilotStyleCardRow
+                            if copilotStyleMatching {
+                                copilotStyleCardRow
+                            }
                         }
 
-                        copilotSubToggle(
-                            title: "Remember people and projects",
-                            subtitle:
-                                "Keeps a file per person, org, project and topic from your meetings, and tidies them up daily.",
-                            isOn: $copilotDossiers
-                        ) { CopilotSettings.shared.dossiersEnabled = $0 }
+                        Group {
+                            copilotSubToggle(
+                                title: "Remember people and projects",
+                                subtitle:
+                                    "Keeps a file per person, org, project and topic from your meetings, and tidies them up daily.",
+                                isOn: $copilotDossiers
+                            ) { CopilotSettings.shared.dossiersEnabled = $0 }
 
-                        if copilotDossiers {
-                            HStack {
-                                Text("Stored on this Mac as plain markdown you can read and edit.")
-                                    .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
-                                Spacer()
-                                Button("Browse") { showDossierBrowser = true }
-                                    .buttonStyle(.plain).scaledFont(size: 12)
-                                    .foregroundColor(OmiColors.textSecondary)
+                            if copilotDossiers {
+                                HStack {
+                                    Text("Stored on this Mac as plain markdown you can read and edit.")
+                                        .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+                                    Spacer()
+                                    Button("Browse") { showDossierBrowser = true }
+                                        .buttonStyle(.plain).scaledFont(size: 12)
+                                        .foregroundColor(OmiColors.textSecondary)
+                                }
                             }
                         }
 
@@ -86,14 +92,16 @@ extension SettingsContentView {
                             isOn: $copilotExportMarkdown
                         ) { CopilotSettings.shared.exportMeetingMarkdown = $0 }
 
-                        copilotSubToggle(
-                            title: "Learn from my feedback",
-                            subtitle: "Suggestion types you dismiss get quieter; ones you act on come readily.",
-                            isOn: $copilotAdaptiveEnabled
-                        ) { CopilotSettings.shared.adaptiveThresholdEnabled = $0 }
+                        Group {
+                            copilotSubToggle(
+                                title: "Learn from my feedback",
+                                subtitle: "Suggestion types you dismiss get quieter; ones you act on come readily.",
+                                isOn: $copilotAdaptiveEnabled
+                            ) { CopilotSettings.shared.adaptiveThresholdEnabled = $0 }
 
-                        if copilotAdaptiveEnabled {
-                            CopilotPreferencesRow()
+                            if copilotAdaptiveEnabled {
+                                CopilotPreferencesRow()
+                            }
                         }
                     }
                 }

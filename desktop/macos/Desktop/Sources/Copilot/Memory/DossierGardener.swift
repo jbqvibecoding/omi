@@ -72,12 +72,13 @@ enum DossierGardener {
     @discardableResult
     static func archiveStale() -> Int {
         var count = 0
-        for var dossier in DossierStore.shared.all() where !dossier.isArchived {
+        for dossier in DossierStore.shared.all() where !dossier.isArchived {
             guard let updated = dossier.updatedAt,
                 Date().timeIntervalSince(updated) > Double(staleAfterDays) * 86400
             else { continue }
-            dossier.setField("archived", "true")
-            if DossierStore.shared.save(dossier, stampUpdated: false) { count += 1 }
+            var stale = dossier
+            stale.setField("archived", "true")
+            if DossierStore.shared.save(stale, stampUpdated: false) { count += 1 }
         }
         return count
     }

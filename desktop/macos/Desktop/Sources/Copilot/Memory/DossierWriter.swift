@@ -18,13 +18,18 @@ enum DossierWriter {
         let role: String?
         /// One-line factual summary of what happened with them, this session.
         let activity: String
-        /// Durable facts worth keeping past this meeting.
-        let keyFacts: [String]
+        /// Durable facts worth keeping past this meeting. Optional because the schema only
+        /// requires the identifying fields — an entity with nothing durable to say about it
+        /// must not fail the whole extraction.
+        let keyFacts: [String]?
         /// Things the user owes them or they owe the user.
-        let openItems: [String]
+        let openItems: [String]?
         /// Whether the model believes this passed the bar for a file of its own.
         let earnsDossier: Bool
         let reason: String
+
+        var facts: [String] { keyFacts ?? [] }
+        var commitments: [String] { openItems ?? [] }
     }
 
     private struct Extraction: Codable {
@@ -205,10 +210,10 @@ enum DossierWriter {
         let source = (sourceTitle?.isEmpty == false) ? " (\(sourceTitle!))" : ""
         dossier.body = appendBullet(
             to: dossier.body, section: "Activity", line: "\(stamp) — \(proposal.activity)\(source)")
-        for fact in proposal.keyFacts where !fact.isEmpty {
+        for fact in proposal.facts where !fact.isEmpty {
             dossier.body = appendBullet(to: dossier.body, section: "Key facts", line: fact)
         }
-        for item in proposal.openItems where !item.isEmpty {
+        for item in proposal.commitments where !item.isEmpty {
             dossier.body = appendBullet(
                 to: dossier.body, section: "Open items", line: item, checkbox: true)
         }
