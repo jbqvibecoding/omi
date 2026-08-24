@@ -57,6 +57,14 @@ final class CopilotOrchestrator {
         }
 
         DesktopAutomationActionRegistry.shared.register(
+            name: "copilot_suggest_now",
+            summary: "Ask the live copilot for a suggestion right now, bypassing the word "
+                + "budget, cooldowns and pre-gate (same as the suggest-now shortcut)."
+        ) { _ in
+            await LiveSuggestionsMonitor.shared.suggestNow()
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
             name: "copilot_hot_mode",
             summary: "Toggle Copilot hot mode: starts a live voice session over the realtime hub "
                 + "(as if double-pressing the copilot shortcut), or ends it if one is active."

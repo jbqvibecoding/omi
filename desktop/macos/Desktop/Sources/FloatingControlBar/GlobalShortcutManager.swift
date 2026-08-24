@@ -16,11 +16,13 @@ class GlobalShortcutManager {
         case askOmi = 2
         case copilot = 3
         case clickThrough = 4
+        case suggestNow = 5
     }
 
     private var shortcutObserver: NSObjectProtocol?
     private var copilotShortcutObserver: NSObjectProtocol?
     private var clickThroughShortcutObserver: NSObjectProtocol?
+    private var suggestNowShortcutObserver: NSObjectProtocol?
 
     private init() {
         var eventType = EventTypeSpec(
@@ -53,6 +55,15 @@ class GlobalShortcutManager {
             self?.registerCopilot()
         }
 
+        // Re-register the suggest-now shortcut when user changes it in settings
+        suggestNowShortcutObserver = NotificationCenter.default.addObserver(
+            forName: ShortcutSettings.suggestNowShortcutChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.registerSuggestNow()
+        }
+
         // Re-register click-through shortcut when user changes it in settings
         clickThroughShortcutObserver = NotificationCenter.default.addObserver(
             forName: ShortcutSettings.clickThroughShortcutChanged,
@@ -72,6 +83,8 @@ class GlobalShortcutManager {
         registerCopilot()
         // Register click-through toggle shortcut from user settings
         registerClickThrough()
+        // Register the "ask for a suggestion now" shortcut from user settings
+        registerSuggestNow()
     }
 
     func setRegistrationSuspended(_ suspended: Bool) {
@@ -123,6 +136,26 @@ class GlobalShortcutManager {
         }
         registerHotKey(keyCode: Int(keyCode), modifiers: copilotShortcut.carbonModifiers, id: .copilot)
         NSLog("GlobalShortcutManager: Registered Copilot Snap shortcut: \(copilotShortcut.displayLabel)")
+    }
+
+    private func registerSuggestNow() {
+        guard !isRegistrationSuspended else { return }
+        if let ref = hotKeyRefs.removeValue(forKey: .suggestNow) {
+            UnregisterEventHotKey(ref)
+        }
+        let (enabled, shortcut) = MainActor.assumeIsolated {
+            (ShortcutSettings.shared.suggestNowEnabled, ShortcutSettings.shared.suggestNowShortcut)
+        }
+        guard enabled else {
+            NSLog("GlobalShortcutManager: Suggest-now shortcut is disabled")
+            return
+        }
+        guard shortcut.supportsGlobalHotKey, let keyCode = shortcut.keyCode else {
+            NSLog("GlobalShortcutManager: Suggest-now shortcut is not a registerable hotkey")
+            return
+        }
+        registerHotKey(keyCode: Int(keyCode), modifiers: shortcut.carbonModifiers, id: .suggestNow)
+        NSLog("GlobalShortcutManager: Registered suggest-now shortcut: \(shortcut.displayLabel)")
     }
 
     private func registerClickThrough() {
@@ -194,6 +227,13 @@ class GlobalShortcutManager {
             NSLog("GlobalShortcutManager: Click-through shortcut detected")
             DispatchQueue.main.async {
                 FloatingControlBarManager.shared.toggleClickThrough()
+            }
+        case .suggestNow:
+            NSLog("GlobalShortcutManager: Suggest-now shortcut detected")
+            DispatchQueue.main.async {
+                Task { @MainActor in
+                    await LiveSuggestionsMonitor.shared.suggestNow()
+                }
             }
         }
 

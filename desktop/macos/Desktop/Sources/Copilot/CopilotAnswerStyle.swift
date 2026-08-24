@@ -127,3 +127,33 @@ enum CopilotAnswerStyle {
         return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
     }
 }
+
+/// When the live copilot is allowed to speak up on its own.
+///
+/// The default stays fully automatic — that is the product. But "always on" is the wrong
+/// setting for some rooms, and until now the only alternative was turning the copilot off
+/// entirely. These are the two useful points in between.
+enum CopilotTriggerPolicy: String, Codable, CaseIterable {
+    /// Every moment the gate judges worth interrupting for.
+    case auto
+    /// Only when someone appears to be asking the user something. Much quieter.
+    case onQuestion
+    /// Never on its own — it still listens, but waits to be asked.
+    case manual
+
+    var displayName: String {
+        switch self {
+        case .auto: return "Whenever it can help"
+        case .onQuestion: return "Only when I'm asked something"
+        case .manual: return "Only when I ask for it"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .auto: return "The default: it decides, and most moments it stays quiet anyway."
+        case .onQuestion: return "Skips commitments, facts and next steps. Just questions aimed at you."
+        case .manual: return "It keeps listening and stays silent until you hit the shortcut."
+        }
+    }
+}

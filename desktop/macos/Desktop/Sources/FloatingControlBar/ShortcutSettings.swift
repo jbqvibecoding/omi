@@ -14,6 +14,7 @@ class ShortcutSettings: ObservableObject {
 
     /// Notification posted when the click-through shortcut changes so hotkeys can be re-registered.
     nonisolated static let clickThroughShortcutChanged = Notification.Name("ShortcutSettings.clickThroughShortcutChanged")
+    nonisolated static let suggestNowShortcutChanged = Notification.Name("ShortcutSettings.suggestNowShortcutChanged")
 
     /// Notification posted when stealth mode is toggled so windows can refresh content protection.
     nonisolated static let stealthModeChanged = Notification.Name("ShortcutSettings.stealthModeChanged")
@@ -300,6 +301,12 @@ class ShortcutSettings: ObservableObject {
         copilotOptionReturnShortcut,
     ]
 
+    // "Suggest now" — ask the live copilot for a suggestion mid-conversation. ⌃⇧↩ sits
+    // next to the copilot key so the two read as one family under the same thumb.
+    static let suggestNowShortcut = KeyboardShortcut(
+        keyCode: 36, keyDisplay: "↩", modifiers: [.control, .shift])
+    static let defaultSuggestNowShortcut = suggestNowShortcut
+
     // Click-through toggle (default ⌘M, matching cheating-daddy/glass Cmd+M convention).
     static let clickThroughCommandMShortcut = KeyboardShortcut(keyCode: 46, keyDisplay: "M", modifiers: .command)
     static let defaultClickThroughShortcut = clickThroughCommandMShortcut
@@ -349,6 +356,21 @@ class ShortcutSettings: ObservableObject {
         didSet {
             UserDefaults.standard.set(copilotEnabled, forKey: "shortcut_copilotEnabled")
             NotificationCenter.default.post(name: Self.copilotShortcutChanged, object: nil)
+        }
+    }
+
+    /// Ask the live copilot for a suggestion on demand, mid-conversation.
+    @Published var suggestNowShortcut: KeyboardShortcut {
+        didSet {
+            persistShortcut(suggestNowShortcut, forKey: Self.suggestNowShortcutDefaultsKey)
+            NotificationCenter.default.post(name: Self.suggestNowShortcutChanged, object: nil)
+        }
+    }
+
+    @Published var suggestNowEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(suggestNowEnabled, forKey: "shortcut_suggestNowEnabled")
+            NotificationCenter.default.post(name: Self.suggestNowShortcutChanged, object: nil)
         }
     }
 
@@ -593,6 +615,7 @@ class ShortcutSettings: ObservableObject {
     private static let pttShortcutDefaultsKey = "shortcut_pttKey"
     private static let copilotShortcutDefaultsKey = "shortcut_copilotKey"
     private static let clickThroughShortcutDefaultsKey = "shortcut_clickThroughKey"
+    private static let suggestNowShortcutDefaultsKey = "shortcut_suggestNowKey"
 
     private init() {
         self.pttShortcut = Self.loadShortcut(
@@ -615,10 +638,16 @@ class ShortcutSettings: ObservableObject {
             legacyMapper: { _ in nil }
         ) ?? Self.defaultClickThroughShortcut
 
+        self.suggestNowShortcut = Self.loadShortcut(
+            forKey: Self.suggestNowShortcutDefaultsKey,
+            legacyMapper: { _ in nil }
+        ) ?? Self.defaultSuggestNowShortcut
+
         self.askOmiEnabled = UserDefaults.standard.object(forKey: "shortcut_askOmiEnabled") as? Bool ?? true
         self.copilotEnabled = UserDefaults.standard.object(forKey: "shortcut_copilotEnabled") as? Bool ?? true
         self.stealthModeEnabled = UserDefaults.standard.object(forKey: "shortcut_stealthModeEnabled") as? Bool ?? true
         self.clickThroughEnabled = UserDefaults.standard.object(forKey: "shortcut_clickThroughEnabled") as? Bool ?? true
+        self.suggestNowEnabled = UserDefaults.standard.object(forKey: "shortcut_suggestNowEnabled") as? Bool ?? true
         self.pttEnabled = UserDefaults.standard.object(forKey: "shortcut_pttEnabled") as? Bool ?? true
         self.doubleTapForLock = UserDefaults.standard.object(forKey: "shortcut_doubleTapForLock") as? Bool ?? true
         self.solidBackground = UserDefaults.standard.object(forKey: "shortcut_solidBackground") as? Bool ?? false

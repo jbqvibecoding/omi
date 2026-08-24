@@ -240,6 +240,9 @@ final class LiveSuggestionsMonitor: ObservableObject {
 
     private func maybeEvaluate(segments: [SpeakerSegment]) {
         guard !isEvaluating else { return }
+        // The user's standing answer to "when may you interrupt me". `.manual` keeps the
+        // copilot listening (transcript, notes, summary all still run) but silent.
+        guard CopilotSettings.shared.triggerPolicy != .manual else { return }
         guard wordsSinceLastEval >= wordThreshold || vocabularyHit else { return }
         guard Date().timeIntervalSince(lastEvalAt) >= evalCooldown else { return }
         guard suggestionsThisSession.count < CopilotSettings.shared.maxSuggestionsPerSession else { return }
@@ -258,6 +261,20 @@ final class LiveSuggestionsMonitor: ObservableObject {
 
         let transcript = transcriptWindow(from: segments)
         guard !transcript.isEmpty else { return }
+
+        // `.onQuestion` narrows the copilot to the one moment people actually want covered:
+        // someone just asked them something. Reuses the same cheap local detector the
+        // pre-gate runs on, so this costs nothing extra.
+        if CopilotSettings.shared.triggerPolicy == .onQuestion {
+            let recentTail = transcript.split(separator: " ").suffix(25).joined(separator: " ")
+            let kind = CopilotRealtimeGate.detectTriggerKind(
+                recentTail, topicVocabulary: vocabulary)
+            guard kind == .question else {
+                preGateSkipCount += 1
+                wordsSinceLastEval = 0
+                return
+            }
+        }
 
         // Local pre-gate (OpenOats RealtimeGate): skip the LLM gate call entirely when the
         // latest exchange is clearly not a moment. Scenario vocabulary hits bypass it —
@@ -549,6 +566,46 @@ final class LiveSuggestionsMonitor: ObservableObject {
         let client = try GeminiClient(model: ModelQoS.Gemini.proactive, fallbackModel: "gemini-2.5-flash")
         geminiClient = client
         return client
+    }
+
+    // MARK: - Manual trigger
+
+    /// Ask for a suggestion right now, from the shortcut or omi-ctl.
+    ///
+    /// This is the escape hatch the copilot never had: the gate decides most moments aren't
+    /// worth interrupting for, and it is usually right, but the user is the one person who
+    /// knows for certain. So this bypasses the word budget, the cooldowns and the pre-gate.
+    ///
+    /// It does NOT bypass the per-session cap — that exists to stop a runaway loop, and the
+    /// user asking is not evidence the loop is healthy.
+    @discardableResult
+    func suggestNow() async -> [String: String] {
+        guard currentSessionId != nil else {
+            return ["error": "not recording — start a session first"]
+        }
+        guard !isEvaluating else { return ["error": "already thinking"] }
+        guard suggestionsThisSession.count < CopilotSettings.shared.maxSuggestionsPerSession else {
+            return ["error": "hit this session's suggestion cap"]
+        }
+
+        let segments = LiveTranscriptMonitor.shared.segments
+        let transcript = transcriptWindow(from: segments)
+        guard !transcript.isEmpty else { return ["error": "nothing has been said yet"] }
+
+        isEvaluating = true
+        lastEvalAt = Date()
+        wordsSinceLastEval = 0
+        vocabularyHit = false
+        PostHogManager.shared.track("copilot_suggest_now", properties: [:])
+        // Warm notes hits if they're stale — a hand-asked suggestion is worth the extra call.
+        var hits = freshKBHits
+        if hits.isEmpty, CopilotSettings.shared.notesRagActive {
+            let query = transcript.split(separator: " ").suffix(40).joined(separator: " ")
+            hits = await NotesKnowledgeBase.shared.search(queries: [query], topK: 3)
+        }
+        return await evaluate(
+            transcript: transcript, cursorAtEval: segments.last?.end ?? 0,
+            bypassStaleness: true, kbHits: hits)
     }
 
     // MARK: - Debug (automation bridge)

@@ -86,7 +86,12 @@ extension SettingsContentView {
                             }
                         }
 
-                        CopilotAnswerStyleRow()
+                        // When it speaks and how it answers — one concern, and grouping
+                        // them keeps this block under ViewBuilder's ten-child limit.
+                        Group {
+                            CopilotTriggerPolicyRow()
+                            CopilotAnswerStyleRow()
+                        }
 
                         copilotSubToggle(
                             title: "Export meetings as markdown",
@@ -505,5 +510,43 @@ private struct CopilotAnswerStyleRow: View {
         languageId == CopilotAnswerLanguage.auto.id
             ? "Matches whatever is being said or shown."
             : "Explanations only — a line you say out loud stays in the room's language."
+    }
+}
+
+/// When the copilot may speak up on its own.
+///
+/// Worth its own row because the honest answer for some rooms is "not unless I ask", and
+/// until now the only way to get that was switching the copilot off — which also switched
+/// off the transcript, the notes and the summary.
+private struct CopilotTriggerPolicyRow: View {
+    @State private var policy: CopilotTriggerPolicy = .auto
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Speak up").scaledFont(size: 14).foregroundColor(OmiColors.textPrimary)
+                    Text(policy.subtitle).scaledFont(size: 12)
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+                Spacer()
+                Picker("", selection: $policy) {
+                    ForEach(CopilotTriggerPolicy.allCases, id: \.self) { option in
+                        Text(option.displayName).tag(option)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 220)
+                .onChange(of: policy) { _, value in
+                    CopilotSettings.shared.triggerPolicy = value
+                }
+            }
+
+            Text(
+                "However you set this, \(ShortcutSettings.shared.suggestNowShortcut.displayLabel) always asks for one on the spot."
+            )
+            .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+        }
+        .onAppear { policy = CopilotSettings.shared.triggerPolicy }
     }
 }

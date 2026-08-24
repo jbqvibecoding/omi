@@ -24,6 +24,7 @@ class CopilotSettings {
     private let dossiersEnabledKey = "copilotDossiersEnabled"
     private let answerLanguageKey = "copilotAnswerLanguage"
     private let responseLengthKey = "copilotResponseLength"
+    private let triggerPolicyKey = "copilotTriggerPolicy"
 
     // MARK: - Default Values
 
@@ -49,6 +50,7 @@ class CopilotSettings {
             dossiersEnabledKey: true,
             answerLanguageKey: CopilotAnswerLanguage.auto.id,
             responseLengthKey: CopilotResponseLength.adaptive.rawValue,
+            triggerPolicyKey: CopilotTriggerPolicy.auto.rawValue,
         ])
     }
 
@@ -200,6 +202,18 @@ class CopilotSettings {
         }
         set {
             UserDefaults.standard.set(newValue.rawValue, forKey: responseLengthKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// When the live copilot is allowed to speak up on its own.
+    var triggerPolicy: CopilotTriggerPolicy {
+        get {
+            CopilotTriggerPolicy(
+                rawValue: UserDefaults.standard.string(forKey: triggerPolicyKey) ?? "") ?? .auto
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: triggerPolicyKey)
             NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
         }
     }
