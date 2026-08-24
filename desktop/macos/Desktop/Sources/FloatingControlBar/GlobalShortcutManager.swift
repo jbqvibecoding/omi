@@ -17,12 +17,14 @@ class GlobalShortcutManager {
         case copilot = 3
         case clickThrough = 4
         case suggestNow = 5
+        case snapRegion = 6
     }
 
     private var shortcutObserver: NSObjectProtocol?
     private var copilotShortcutObserver: NSObjectProtocol?
     private var clickThroughShortcutObserver: NSObjectProtocol?
     private var suggestNowShortcutObserver: NSObjectProtocol?
+    private var snapRegionShortcutObserver: NSObjectProtocol?
 
     private init() {
         var eventType = EventTypeSpec(
@@ -55,6 +57,15 @@ class GlobalShortcutManager {
             self?.registerCopilot()
         }
 
+        // Re-register the region-snap shortcut when user changes it in settings
+        snapRegionShortcutObserver = NotificationCenter.default.addObserver(
+            forName: ShortcutSettings.snapRegionShortcutChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.registerSnapRegion()
+        }
+
         // Re-register the suggest-now shortcut when user changes it in settings
         suggestNowShortcutObserver = NotificationCenter.default.addObserver(
             forName: ShortcutSettings.suggestNowShortcutChanged,
@@ -85,6 +96,8 @@ class GlobalShortcutManager {
         registerClickThrough()
         // Register the "ask for a suggestion now" shortcut from user settings
         registerSuggestNow()
+        // Register the region-snap shortcut from user settings
+        registerSnapRegion()
     }
 
     func setRegistrationSuspended(_ suspended: Bool) {
@@ -136,6 +149,26 @@ class GlobalShortcutManager {
         }
         registerHotKey(keyCode: Int(keyCode), modifiers: copilotShortcut.carbonModifiers, id: .copilot)
         NSLog("GlobalShortcutManager: Registered Copilot Snap shortcut: \(copilotShortcut.displayLabel)")
+    }
+
+    private func registerSnapRegion() {
+        guard !isRegistrationSuspended else { return }
+        if let ref = hotKeyRefs.removeValue(forKey: .snapRegion) {
+            UnregisterEventHotKey(ref)
+        }
+        let (enabled, shortcut) = MainActor.assumeIsolated {
+            (ShortcutSettings.shared.snapRegionEnabled, ShortcutSettings.shared.snapRegionShortcut)
+        }
+        guard enabled else {
+            NSLog("GlobalShortcutManager: Region-snap shortcut is disabled")
+            return
+        }
+        guard shortcut.supportsGlobalHotKey, let keyCode = shortcut.keyCode else {
+            NSLog("GlobalShortcutManager: Region-snap shortcut is not a registerable hotkey")
+            return
+        }
+        registerHotKey(keyCode: Int(keyCode), modifiers: shortcut.carbonModifiers, id: .snapRegion)
+        NSLog("GlobalShortcutManager: Registered region-snap shortcut: \(shortcut.displayLabel)")
     }
 
     private func registerSuggestNow() {
@@ -227,6 +260,14 @@ class GlobalShortcutManager {
             NSLog("GlobalShortcutManager: Click-through shortcut detected")
             DispatchQueue.main.async {
                 FloatingControlBarManager.shared.toggleClickThrough()
+            }
+        case .snapRegion:
+            NSLog("GlobalShortcutManager: Region-snap shortcut detected")
+            DispatchQueue.main.async {
+                Task { @MainActor in
+                    await CopilotOrchestrator.shared.triggerSnap(
+                        source: "hotkey_region", selectRegion: true)
+                }
             }
         case .suggestNow:
             NSLog("GlobalShortcutManager: Suggest-now shortcut detected")

@@ -57,6 +57,15 @@ final class CopilotOrchestrator {
         }
 
         DesktopAutomationActionRegistry.shared.register(
+            name: "copilot_snap_region",
+            summary: "Drag out a region of the screen and snap only that (same as the "
+                + "region-snap shortcut). Blocks until you finish or press Esc."
+        ) { _ in
+            await CopilotOrchestrator.shared.triggerSnap(
+                source: "automation_region", selectRegion: true)
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
             name: "copilot_prep_dump",
             summary: "Show the prep sheet for the active scenario: which slots it has and "
                 + "how much the user filled in."
@@ -464,10 +473,16 @@ final class CopilotOrchestrator {
     /// 1st press → snap (screenshot + predictive answer card),
     /// 2nd press within 3s → hot mode (live voice session over the realtime hub),
     /// press during hot mode → end the voice session.
+    /// `selectRegion` drags out a region first and answers about only that. Hot mode is
+    /// skipped in that case — a region snap is a deliberate, slower gesture, so treating a
+    /// second press as a double-tap upgrade would fight the user.
     @discardableResult
-    func triggerSnap(source: String) async -> [String: String]? {
+    func triggerSnap(source: String, selectRegion: Bool = false) async -> [String: String]? {
         // Hot-mode checks come before the in-flight guard so a double-press
         // upgrades even while the snap request is still running.
+        if selectRegion {
+            return await runSnap(source: source, selectRegion: true)
+        }
         if PushToTalkManager.shared.state == .lockedListening {
             PushToTalkManager.shared.finalizeVoiceSession()
             return ["hot_mode": "ended"]
@@ -477,7 +492,10 @@ final class CopilotOrchestrator {
             return upgradeToHotMode(source: source)
         }
         lastSnapTriggeredAt = Date()
+        return await runSnap(source: source, selectRegion: false)
+    }
 
+    private func runSnap(source: String, selectRegion: Bool) async -> [String: String]? {
         guard !isRunning else {
             log("CopilotOrchestrator: snap already running, ignoring trigger (\(source))")
             return ["error": "snap already running"]
@@ -488,13 +506,25 @@ final class CopilotOrchestrator {
         let startedAt = Date()
         log("CopilotOrchestrator: snap triggered (\(source))")
 
+        // The region picker is modal and takes as long as the user takes, so it runs
+        // before the thinking state — showing "working on it" while they are still
+        // dragging would be a lie.
+        var regionShot: Data?
+        if selectRegion {
+            regionShot = await RegionSelectCapture.shared.selectAndCapture()
+            guard regionShot != nil else {
+                log("CopilotOrchestrator: region selection cancelled")
+                return ["cancelled": "region selection"]
+            }
+        }
+
         // Show the thinking state before any capture/network work so the bar
         // responds instantly to the keypress.
         FloatingControlBarManager.shared.beginCopilotSnap()
 
         // Capture + context assembly in parallel.
         async let snapshotTask = CopilotContextEngine.shared.snapshot()
-        let rawScreenshot = ScreenCaptureManager.captureScreenJPEG()
+        let rawScreenshot = regionShot ?? ScreenCaptureManager.captureScreenJPEG()
         let context = await snapshotTask
 
         guard let rawScreenshot else {
@@ -505,8 +535,14 @@ final class CopilotOrchestrator {
 
         do {
             let client = try cachedGeminiClient()
+            var userPrompt = CopilotPrompts.userPrompt(context: context)
+            if selectRegion {
+                userPrompt +=
+                    "\n\nThe user deliberately cropped to this exact region of their screen. "
+                    + "Whatever is in it is what they are asking about."
+            }
             let responseText = try await client.sendRequest(
-                prompt: CopilotPrompts.userPrompt(context: context),
+                prompt: userPrompt,
                 imageData: imageData,
                 systemPrompt: CopilotPrompts.snapSystemPrompt(),
                 responseSchema: CopilotPrompts.responseSchema,
@@ -531,6 +567,7 @@ final class CopilotOrchestrator {
                 "copilot_snap_triggered",
                 properties: [
                     "source": source,
+                    "region": selectRegion,
                     "elapsed_ms": elapsedMs,
                     "confidence": result.confidence,
                     "had_transcript": !context.transcriptWindow.isEmpty,

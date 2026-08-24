@@ -15,6 +15,7 @@ class ShortcutSettings: ObservableObject {
     /// Notification posted when the click-through shortcut changes so hotkeys can be re-registered.
     nonisolated static let clickThroughShortcutChanged = Notification.Name("ShortcutSettings.clickThroughShortcutChanged")
     nonisolated static let suggestNowShortcutChanged = Notification.Name("ShortcutSettings.suggestNowShortcutChanged")
+    nonisolated static let snapRegionShortcutChanged = Notification.Name("ShortcutSettings.snapRegionShortcutChanged")
 
     /// Notification posted when stealth mode is toggled so windows can refresh content protection.
     nonisolated static let stealthModeChanged = Notification.Name("ShortcutSettings.stealthModeChanged")
@@ -307,6 +308,12 @@ class ShortcutSettings: ObservableObject {
         keyCode: 36, keyDisplay: "↩", modifiers: [.control, .shift])
     static let defaultSuggestNowShortcut = suggestNowShortcut
 
+    // Snap a selected region instead of the whole screen. ⌥⌃↩ keeps it in the copilot
+    // family — same Return key, one extra modifier for "let me pick the part".
+    static let snapRegionShortcut = KeyboardShortcut(
+        keyCode: 36, keyDisplay: "↩", modifiers: [.control, .option])
+    static let defaultSnapRegionShortcut = snapRegionShortcut
+
     // Click-through toggle (default ⌘M, matching cheating-daddy/glass Cmd+M convention).
     static let clickThroughCommandMShortcut = KeyboardShortcut(keyCode: 46, keyDisplay: "M", modifiers: .command)
     static let defaultClickThroughShortcut = clickThroughCommandMShortcut
@@ -371,6 +378,21 @@ class ShortcutSettings: ObservableObject {
         didSet {
             UserDefaults.standard.set(suggestNowEnabled, forKey: "shortcut_suggestNowEnabled")
             NotificationCenter.default.post(name: Self.suggestNowShortcutChanged, object: nil)
+        }
+    }
+
+    /// Drag out a region and snap only that.
+    @Published var snapRegionShortcut: KeyboardShortcut {
+        didSet {
+            persistShortcut(snapRegionShortcut, forKey: Self.snapRegionShortcutDefaultsKey)
+            NotificationCenter.default.post(name: Self.snapRegionShortcutChanged, object: nil)
+        }
+    }
+
+    @Published var snapRegionEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(snapRegionEnabled, forKey: "shortcut_snapRegionEnabled")
+            NotificationCenter.default.post(name: Self.snapRegionShortcutChanged, object: nil)
         }
     }
 
@@ -616,6 +638,7 @@ class ShortcutSettings: ObservableObject {
     private static let copilotShortcutDefaultsKey = "shortcut_copilotKey"
     private static let clickThroughShortcutDefaultsKey = "shortcut_clickThroughKey"
     private static let suggestNowShortcutDefaultsKey = "shortcut_suggestNowKey"
+    private static let snapRegionShortcutDefaultsKey = "shortcut_snapRegionKey"
 
     private init() {
         self.pttShortcut = Self.loadShortcut(
@@ -643,11 +666,17 @@ class ShortcutSettings: ObservableObject {
             legacyMapper: { _ in nil }
         ) ?? Self.defaultSuggestNowShortcut
 
+        self.snapRegionShortcut = Self.loadShortcut(
+            forKey: Self.snapRegionShortcutDefaultsKey,
+            legacyMapper: { _ in nil }
+        ) ?? Self.defaultSnapRegionShortcut
+
         self.askOmiEnabled = UserDefaults.standard.object(forKey: "shortcut_askOmiEnabled") as? Bool ?? true
         self.copilotEnabled = UserDefaults.standard.object(forKey: "shortcut_copilotEnabled") as? Bool ?? true
         self.stealthModeEnabled = UserDefaults.standard.object(forKey: "shortcut_stealthModeEnabled") as? Bool ?? true
         self.clickThroughEnabled = UserDefaults.standard.object(forKey: "shortcut_clickThroughEnabled") as? Bool ?? true
         self.suggestNowEnabled = UserDefaults.standard.object(forKey: "shortcut_suggestNowEnabled") as? Bool ?? true
+        self.snapRegionEnabled = UserDefaults.standard.object(forKey: "shortcut_snapRegionEnabled") as? Bool ?? true
         self.pttEnabled = UserDefaults.standard.object(forKey: "shortcut_pttEnabled") as? Bool ?? true
         self.doubleTapForLock = UserDefaults.standard.object(forKey: "shortcut_doubleTapForLock") as? Bool ?? true
         self.solidBackground = UserDefaults.standard.object(forKey: "shortcut_solidBackground") as? Bool ?? false
