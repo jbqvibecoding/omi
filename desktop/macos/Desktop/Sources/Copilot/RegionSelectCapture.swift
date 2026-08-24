@@ -143,9 +143,11 @@ final class RegionSelectCapture {
 }
 
 /// The dimmed overlay the user drags on. Reports its rect in global AppKit coordinates.
+@MainActor
 private final class RegionSelectView: NSView {
-    var onComplete: ((NSRect, NSScreen) -> Void)?
-    var onCancel: (() -> Void)?
+    // Annotated because they hop back into RegionSelectCapture, which is main-actor bound.
+    var onComplete: (@MainActor (NSRect, NSScreen) -> Void)?
+    var onCancel: (@MainActor () -> Void)?
 
     private let screen: NSScreen
     private var anchor: NSPoint?
