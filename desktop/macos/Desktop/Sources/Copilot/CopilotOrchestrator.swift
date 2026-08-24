@@ -492,7 +492,7 @@ final class CopilotOrchestrator {
             let responseText = try await client.sendRequest(
                 prompt: CopilotPrompts.userPrompt(context: context),
                 imageData: imageData,
-                systemPrompt: CopilotPrompts.systemPrompt,
+                systemPrompt: CopilotPrompts.snapSystemPrompt(),
                 responseSchema: CopilotPrompts.responseSchema,
                 thinkingBudget: 0
             )

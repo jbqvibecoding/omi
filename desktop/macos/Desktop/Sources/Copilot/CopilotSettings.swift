@@ -22,6 +22,8 @@ class CopilotSettings {
     private let meetingPrepEnabledKey = "copilotMeetingPrepEnabled"
     private let styleMatchingEnabledKey = "copilotStyleMatchingEnabled"
     private let dossiersEnabledKey = "copilotDossiersEnabled"
+    private let answerLanguageKey = "copilotAnswerLanguage"
+    private let responseLengthKey = "copilotResponseLength"
 
     // MARK: - Default Values
 
@@ -45,6 +47,8 @@ class CopilotSettings {
             meetingPrepEnabledKey: true,
             styleMatchingEnabledKey: true,
             dossiersEnabledKey: true,
+            answerLanguageKey: CopilotAnswerLanguage.auto.id,
+            responseLengthKey: CopilotResponseLength.adaptive.rawValue,
         ])
     }
 
@@ -172,6 +176,30 @@ class CopilotSettings {
         get { UserDefaults.standard.bool(forKey: styleMatchingEnabledKey) }
         set {
             UserDefaults.standard.set(newValue, forKey: styleMatchingEnabledKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Which language the copilot answers in. Defaults to following the conversation.
+    var answerLanguage: CopilotAnswerLanguage {
+        get {
+            CopilotAnswerLanguage.byId(
+                UserDefaults.standard.string(forKey: answerLanguageKey) ?? CopilotAnswerLanguage.auto.id)
+        }
+        set {
+            UserDefaults.standard.set(newValue.id, forKey: answerLanguageKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// How long an answer should be.
+    var responseLength: CopilotResponseLength {
+        get {
+            CopilotResponseLength(
+                rawValue: UserDefaults.standard.string(forKey: responseLengthKey) ?? "") ?? .adaptive
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: responseLengthKey)
             NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
         }
     }

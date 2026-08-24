@@ -46,6 +46,13 @@ enum CopilotPrompts {
         artifact is the payload. Only ONE dominant type; when unsure, prefer "general".
         """
 
+    /// The snap system prompt with the user's language/length preferences applied.
+    @MainActor
+    static func snapSystemPrompt() -> String {
+        guard let style = CopilotAnswerStyle.snapFragment() else { return systemPrompt }
+        return "\(systemPrompt)\n\n\(style)"
+    }
+
     /// Structured output schema for the snap call.
     static let responseSchema = GeminiRequest.GenerationConfig.ResponseSchema(
         type: "object",
@@ -165,6 +172,7 @@ extension CopilotPrompts {
         return lines.joined(separator: "\n\n")
     }
 
+    @MainActor
     static func liveSuggestionSystemPrompt(scenario: CopilotScenarioProfile) -> String {
         """
         You are an invisible realtime copilot in an ongoing conversation. Produce ONE short, \
@@ -185,6 +193,7 @@ extension CopilotPrompts {
         - confidence 0.0-1.0: how sure you are this helps right now. Be honest — low-value \
         suggestions with inflated confidence destroy trust.
         - Never repeat a suggestion from the already-given list.
+        \(CopilotAnswerStyle.liveFragment().map { "\n\($0)" } ?? "")
         """
     }
 

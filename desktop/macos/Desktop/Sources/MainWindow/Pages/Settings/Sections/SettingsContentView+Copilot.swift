@@ -86,6 +86,8 @@ extension SettingsContentView {
                             }
                         }
 
+                        CopilotAnswerStyleRow()
+
                         copilotSubToggle(
                             title: "Export meetings as markdown",
                             subtitle: "Saves minutes + transcript to ~/Documents/Omi/Meetings after each session.",
@@ -440,5 +442,68 @@ private struct CopilotStyleCardRow: View {
                 status = "Not enough of your own speech yet — record a meeting first."
             }
         }
+    }
+}
+
+/// How the copilot answers: which language, and how much of it.
+///
+/// The language control exists for one case a global setting usually gets wrong — you work
+/// in your own language but the meeting is in another one — so the row says out loud that
+/// the line you say to the room stays in the room's language.
+private struct CopilotAnswerStyleRow: View {
+    @State private var languageId: String = CopilotAnswerLanguage.auto.id
+    @State private var length: CopilotResponseLength = .adaptive
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Answer in").scaledFont(size: 14).foregroundColor(OmiColors.textPrimary)
+                    Text(languageSubtitle).scaledFont(size: 12)
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+                Spacer()
+                Picker("", selection: $languageId) {
+                    ForEach(CopilotAnswerLanguage.all) { language in
+                        Text(language.displayName).tag(language.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 200)
+                .onChange(of: languageId) { _, value in
+                    CopilotSettings.shared.answerLanguage = CopilotAnswerLanguage.byId(value)
+                }
+            }
+
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Answer length").scaledFont(size: 14)
+                        .foregroundColor(OmiColors.textPrimary)
+                    Text(length.subtitle).scaledFont(size: 12)
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+                Spacer()
+                Picker("", selection: $length) {
+                    ForEach(CopilotResponseLength.allCases, id: \.self) { option in
+                        Text(option.displayName).tag(option)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 200)
+                .onChange(of: length) { _, value in
+                    CopilotSettings.shared.responseLength = value
+                }
+            }
+        }
+        .onAppear {
+            languageId = CopilotSettings.shared.answerLanguage.id
+            length = CopilotSettings.shared.responseLength
+        }
+    }
+
+    private var languageSubtitle: String {
+        languageId == CopilotAnswerLanguage.auto.id
+            ? "Matches whatever is being said or shown."
+            : "Explanations only — a line you say out loud stays in the room's language."
     }
 }
