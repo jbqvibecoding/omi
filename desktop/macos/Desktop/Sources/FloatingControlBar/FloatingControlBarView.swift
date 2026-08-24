@@ -820,6 +820,63 @@ struct FloatingControlBarView: View {
         )
     }
 
+    /// Follow-up questions to render as chips under a copilot suggestion.
+    private func followUpChips(_ notification: FloatingBarNotification) -> [String] {
+        guard notification.assistantId == "copilot" else { return [] }
+        return notification.context?.followUps ?? []
+    }
+
+    /// One-tap follow-ups, generated from the conversation that produced the suggestion.
+    ///
+    /// Tapping hands the question to an agent rather than opening the card's own chat:
+    /// the floating bar has no "ask this specific text" entry point, and spawning is the
+    /// same path the Execute button already uses.
+    @ViewBuilder
+    private func followUpChipRow(_ notification: FloatingBarNotification) -> some View {
+        let chips = followUpChips(notification)
+        if !chips.isEmpty {
+            HStack(spacing: 6) {
+                ForEach(chips, id: \.self) { question in
+                    Button {
+                        let model = ShortcutSettings.shared.selectedModel.isEmpty
+                            ? ModelQoS.Claude.defaultSelection
+                            : ShortcutSettings.shared.selectedModel
+                        var details = notification.message
+                        if let detail = notification.context?.detail, !detail.isEmpty {
+                            details += "\nDetails: \(detail)"
+                        }
+                        _ = AgentPillsManager.shared.spawn(
+                            query: ProactiveTaskExecute.buildQuery(
+                                title: question, message: details),
+                            model: model,
+                            systemPromptSuffix: ProactiveTaskExecute.systemPromptSuffix
+                        )
+                        CopilotFeedbackTuner.shared.record(
+                            notificationId: notification.id,
+                            bucket: notification.context?.feedbackBucket, outcome: .accepted)
+                        CopilotCorrectionLog.shared.recordCardOutcome(
+                            notificationId: notification.id,
+                            bucket: notification.context?.feedbackBucket,
+                            situation: notification.context?.contextSummary ?? notification.message,
+                            accepted: true)
+                        FloatingControlBarManager.shared.dismissCurrentNotification()
+                    } label: {
+                        Text(question)
+                            .scaledFont(size: 10, weight: .medium)
+                            .foregroundColor(.white.opacity(0.85))
+                            .lineLimit(1)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.white.opacity(0.10))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Ask this as a follow-up")
+                }
+            }
+        }
+    }
+
     /// Width reserved under the overlaid action buttons so the text never runs beneath them.
     private func notificationActionSpacerWidth(_ notification: FloatingBarNotification) -> CGFloat {
         switch notification.assistantId {
@@ -863,6 +920,14 @@ struct FloatingControlBarView: View {
                         .foregroundColor(.white.opacity(0.72))
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    // Reserve the row the follow-up chips are overlaid into. Same trick as
+                    // the horizontal spacer above: the chips can't live inside this Button
+                    // (nested buttons don't hit-test), so they're overlaid and the body
+                    // just has to leave them room.
+                    if !followUpChips(notification).isEmpty {
+                        Color.clear.frame(height: 22)
+                    }
                 }
 
                 Spacer(minLength: 0)
@@ -879,6 +944,13 @@ struct FloatingControlBarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .overlay(alignment: .bottomLeading) {
+            // Sits in its own overlay for the same reason the action buttons do: a Button
+            // nested inside the card's Button label would not receive clicks.
+            followUpChipRow(notification)
+                .padding(.leading, 56)  // clears the 34pt icon + its 10pt gap + 12pt padding
+                .padding(.bottom, 12)
+        }
         .overlay(alignment: .topTrailing) {
             HStack(spacing: 6) {
                 // Execute is only meaningful for actionable notifications (tasks).

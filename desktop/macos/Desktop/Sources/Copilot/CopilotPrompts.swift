@@ -204,6 +204,9 @@ extension CopilotPrompts {
         - confidence 0.0-1.0: how sure you are this helps right now. Be honest — low-value \
         suggestions with inflated confidence destroy trust.
         - Never repeat a suggestion from the already-given list.
+        - follow_ups (optional): at most 2 questions THIS conversation makes likely to come \
+        next, max 6 words each, phrased as the user would ask them. Omit the field entirely \
+        when nothing specific follows — generic prompts ("tell me more") are worse than none.
         \(CopilotAnswerStyle.liveFragment().map { "\n\($0)" } ?? "")
         """
     }
@@ -253,6 +256,14 @@ extension CopilotPrompts {
             "suggestion": .init(type: "string", enum: nil, description: "The suggestion, under 50 words, concrete"),
             "talk_track": .init(type: "string", enum: nil, description: "Optional exact sentence the user could say, first person"),
             "confidence": .init(type: "number", enum: nil, description: "0.0-1.0 confidence this helps right now"),
+            "follow_ups": .init(
+                type: "array",
+                enum: nil,
+                description:
+                    "Optional. At most 2 follow-up questions the user might want answered next, "
+                    + "each max 6 words. Draw them from THIS conversation, not generic prompts. "
+                    + "Omit entirely when nothing obvious follows.",
+                items: .init(type: "string", properties: nil, required: nil)),
         ],
         required: ["headline", "suggestion", "confidence"]
     )
@@ -385,26 +396,50 @@ struct CopilotLiveSuggestion: Decodable {
     let suggestion: String
     let talkTrack: String?
     let confidence: Double
+    /// Up to two one-tap follow-ups drawn from this conversation. Optional so responses
+    /// generated before follow-ups existed still decode.
+    let followUps: [String]?
 
     enum CodingKeys: String, CodingKey {
         case headline
         case suggestion
         case talkTrack = "talk_track"
         case confidence
+        case followUps = "follow_ups"
     }
 
-    init(headline: String, suggestion: String, talkTrack: String?, confidence: Double) {
+    init(
+        headline: String, suggestion: String, talkTrack: String?, confidence: Double,
+        followUps: [String]? = nil
+    ) {
         self.headline = headline
         self.suggestion = suggestion
         self.talkTrack = talkTrack
         self.confidence = confidence
+        self.followUps = followUps
+    }
+
+    /// Chips worth rendering: trimmed, de-duplicated, capped at two.
+    var usableFollowUps: [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        for candidate in followUps ?? [] {
+            let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.count >= 3, !seen.contains(trimmed.lowercased()) else { continue }
+            seen.insert(trimmed.lowercased())
+            out.append(trimmed)
+            if out.count == 2 { break }
+        }
+        return out
     }
 
     /// Same suggestion with the spoken line rewritten in the user's voice.
+    /// Carries `followUps` through — this rebuilds the whole value, and dropping them
+    /// here would make the chips vanish whenever style matching is on.
     func withTalkTrack(_ newTalkTrack: String) -> CopilotLiveSuggestion {
         CopilotLiveSuggestion(
             headline: headline, suggestion: suggestion, talkTrack: newTalkTrack,
-            confidence: confidence)
+            confidence: confidence, followUps: followUps)
     }
 }
 

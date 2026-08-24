@@ -58,6 +58,9 @@ struct FloatingBarNotificationContext: Equatable {
     /// Learning bucket "scenario:type" for the feedback tuner; nil for non-copilot cards.
     /// Trailing var with a default so existing memberwise-init call sites are unaffected.
     var feedbackBucket: String? = nil
+    /// One-tap follow-up questions rendered as chips under a copilot suggestion.
+    /// Same trailing-var-with-default reason as above.
+    var followUps: [String]? = nil
 }
 
 /// A custom in-app notification rendered directly below the floating bar.

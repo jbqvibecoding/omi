@@ -490,7 +490,8 @@ final class LiveSuggestionsMonitor: ObservableObject {
             currentActivity: nil,
             reasoning: gateType,
             detail: detail.isEmpty ? nil : detail,
-            feedbackBucket: "\(CopilotSettings.shared.scenario.id):\(gateType)"
+            feedbackBucket: "\(CopilotSettings.shared.scenario.id):\(gateType)",
+            followUps: result.usableFollowUps.isEmpty ? nil : result.usableFollowUps
         )
         // While presenting, only surface audience-driven cards (questions / term definitions);
         // the presenter's own narration shouldn't trigger interruptions. Suppressed suggestions
