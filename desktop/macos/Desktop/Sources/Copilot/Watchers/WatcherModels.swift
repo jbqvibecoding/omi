@@ -49,6 +49,10 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
     /// `action` (default) fires the declarative actions; `document` maintains a live
     /// markdown file instead.
     var mode: String?
+    /// curl command describing a custom endpoint, with {{SYSTEM}} / {{PROMPT}} / {{IMAGE}}.
+    var curlTemplate: String?
+    /// Dotted path to the answer inside that endpoint's JSON response.
+    var responseContentPath: String?
 
     static let minLoopIntervalSeconds = 15
     static let defaultLoopIntervalSeconds = 60
@@ -65,6 +69,11 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
     var consecutiveFailures: Int { failCount ?? 0 }
     var isSelfPaced: Bool { allowSelfPacing ?? false }
     var isDocumentMode: Bool { mode == "document" }
+    /// Defaults to the OpenAI-compatible shape, which is what most endpoints return.
+    var effectiveResponseContentPath: String {
+        let value = (responseContentPath ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? "choices.0.message.content" : value
+    }
     /// Trimmed event criteria, or nil when this watcher doesn't listen for events.
     var eventCriteria: String? {
         let value = (eventMatchCriteria ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -95,7 +104,9 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
         failCount: Int? = nil,
         allowSelfPacing: Bool? = nil,
         eventMatchCriteria: String? = nil,
-        mode: String? = nil
+        mode: String? = nil,
+        curlTemplate: String? = nil,
+        responseContentPath: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -116,6 +127,8 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
         self.allowSelfPacing = allowSelfPacing
         self.eventMatchCriteria = eventMatchCriteria
         self.mode = mode
+        self.curlTemplate = curlTemplate
+        self.responseContentPath = responseContentPath
     }
 
     // Explicit Codable so adding fields never breaks decoding of previously stored watchers
@@ -126,6 +139,7 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
         case approvalPolicy, standingGrants
         case schedule, lastRunAt, lastAttemptAt, failCount
         case allowSelfPacing, eventMatchCriteria, mode
+        case curlTemplate, responseContentPath
     }
 
     init(from decoder: Decoder) throws {
@@ -150,6 +164,8 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
         allowSelfPacing = try? c.decodeIfPresent(Bool.self, forKey: .allowSelfPacing)
         eventMatchCriteria = try? c.decodeIfPresent(String.self, forKey: .eventMatchCriteria)
         mode = try? c.decodeIfPresent(String.self, forKey: .mode)
+        curlTemplate = try? c.decodeIfPresent(String.self, forKey: .curlTemplate)
+        responseContentPath = try? c.decodeIfPresent(String.self, forKey: .responseContentPath)
     }
 }
 
@@ -157,6 +173,8 @@ struct WatcherAgent: Identifiable, Codable, Equatable {
 enum WatcherBackendKind: String, Codable, CaseIterable {
     case gemini
     case ollama
+    /// Any endpoint described by a pasted curl command.
+    case custom
 }
 
 /// Declarative gate on the model response (replaces Observer's `if(response.includes(...))`).

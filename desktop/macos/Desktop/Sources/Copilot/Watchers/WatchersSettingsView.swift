@@ -193,6 +193,8 @@ struct WatcherEditorView: View {
     @State private var allowSelfPacing: Bool
     @State private var eventCriteria: String
     @State private var documentMode: Bool
+    @State private var curlTemplate: String
+    @State private var responseContentPath: String
 
     private let sensorTokens = ["$SCREEN", "$SCREEN_OCR", "$CAMERA", "$CLIPBOARD", "$MEMORY", "$ALL_AUDIO", "$TIME"]
 
@@ -262,6 +264,8 @@ struct WatcherEditorView: View {
         _allowSelfPacing = State(initialValue: existing?.isSelfPaced ?? false)
         _eventCriteria = State(initialValue: existing?.eventCriteria ?? "")
         _documentMode = State(initialValue: existing?.isDocumentMode ?? false)
+        _curlTemplate = State(initialValue: existing?.curlTemplate ?? "")
+        _responseContentPath = State(initialValue: existing?.responseContentPath ?? "")
     }
 
     private func buildSchedule() -> WatcherSchedule {
@@ -491,13 +495,44 @@ struct WatcherEditorView: View {
                 }
 
                 field("Model") {
-                    HStack {
-                        Picker("", selection: $backendKind) {
-                            Text("Omi (cloud)").tag(WatcherBackendKind.gemini)
-                            Text("Ollama (local)").tag(WatcherBackendKind.ollama)
-                        }.pickerStyle(.menu).frame(width: 150)
-                        if backendKind == .ollama {
-                            TextField("model, e.g. gemma3", text: $modelId).textFieldStyle(.roundedBorder)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Picker("", selection: $backendKind) {
+                                Text("Omi (cloud)").tag(WatcherBackendKind.gemini)
+                                Text("Ollama (local)").tag(WatcherBackendKind.ollama)
+                                Text("Any endpoint (curl)").tag(WatcherBackendKind.custom)
+                            }.pickerStyle(.menu).frame(width: 170)
+                            if backendKind == .ollama {
+                                TextField("model, e.g. gemma3", text: $modelId).textFieldStyle(.roundedBorder)
+                            }
+                        }
+
+                        if backendKind == .custom {
+                            Text("Paste the curl command from your provider's docs, then put "
+                                + "\(CurlTemplate.promptToken) where the question goes.")
+                                .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+                            TextEditor(text: $curlTemplate)
+                                .font(.system(size: 11, design: .monospaced))
+                                .frame(minHeight: 110)
+                                .scrollContentBackground(.hidden)
+                                .padding(6)
+                                .background(OmiColors.backgroundTertiary.opacity(0.5))
+                                .cornerRadius(6)
+                            HStack {
+                                Text("Answer path").scaledFont(size: 11)
+                                    .foregroundColor(OmiColors.textSecondary)
+                                TextField("choices.0.message.content", text: $responseContentPath)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                            if let problem = CurlTemplate.validationMessage(for: curlTemplate) {
+                                Text(problem).scaledFont(size: 11).foregroundColor(OmiColors.error)
+                            } else {
+                                Text(
+                                    "Looks right. \(CurlTemplate.systemToken) and "
+                                        + "\(CurlTemplate.imageToken) are optional."
+                                )
+                                .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+                            }
                         }
                     }
                 }
@@ -631,7 +666,11 @@ struct WatcherEditorView: View {
             failCount: 0,
             allowSelfPacing: allowSelfPacing,
             eventMatchCriteria: eventCriteria.trimmingCharacters(in: .whitespacesAndNewlines),
-            mode: documentMode ? "document" : "action")
+            mode: documentMode ? "document" : "action",
+            curlTemplate: backendKind == .custom
+                ? curlTemplate.trimmingCharacters(in: .whitespacesAndNewlines) : nil,
+            responseContentPath: backendKind == .custom
+                ? responseContentPath.trimmingCharacters(in: .whitespacesAndNewlines) : nil)
         WatcherStore.shared.upsert(watcher)
         onDismiss()
     }

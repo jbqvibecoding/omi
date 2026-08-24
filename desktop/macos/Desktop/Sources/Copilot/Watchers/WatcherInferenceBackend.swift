@@ -110,12 +110,58 @@ final class OllamaInferenceBackend: WatcherInferenceBackend {
     }
 }
 
+/// Any endpoint the user can describe with a curl command.
+///
+/// This exists so omi doesn't need an adapter per provider: every provider's docs open
+/// with a curl example, so pasting it is the shortest path from "I have a key" to "my
+/// watcher runs on this model". Non-streaming only — a watcher reads the whole response
+/// before it decides anything, so SSE would buy nothing and cost a parser.
+final class CustomEndpointBackend: WatcherInferenceBackend {
+    private let template: String
+    private let contentPath: String
+    private let timeout: TimeInterval = 90
+
+    init(template: String, contentPath: String) {
+        self.template = template
+        self.contentPath = contentPath
+    }
+
+    func complete(systemPrompt: String, userPrompt: String, images: [Data]) async throws -> String {
+        let parsed = try CurlTemplate.parse(template)
+        let filled = parsed.filled(
+            systemPrompt: systemPrompt, userPrompt: userPrompt,
+            imageBase64: images.first?.base64EncodedString())
+        var request = try filled.urlRequest()
+        request.timeoutInterval = timeout
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            // Endpoint errors are usually a wrong key or model name, and the body says
+            // which — but it can also echo the prompt, so keep it short.
+            let head = String(decoding: data.prefix(300), as: UTF8.self)
+            throw WatcherInferenceError.badResponse("HTTP \(http.statusCode): \(head)")
+        }
+        guard let json = try? JSONSerialization.jsonObject(with: data) else {
+            throw WatcherInferenceError.badResponse("response wasn't JSON")
+        }
+        guard let text = JSONPath.string(in: json, path: contentPath) else {
+            throw WatcherInferenceError.badResponse(
+                "nothing at `\(contentPath)` — check the answer path against a real response")
+        }
+        return text
+    }
+}
+
 /// Builds the backend for a watcher based on its configured kind + model.
 enum WatcherInferenceBackendFactory {
     static func make(for watcher: WatcherAgent) -> WatcherInferenceBackend {
         switch watcher.effectiveBackend {
         case .ollama:
             return OllamaInferenceBackend(modelId: watcher.effectiveModelId ?? "gemma3")
+        case .custom:
+            return CustomEndpointBackend(
+                template: watcher.curlTemplate ?? "",
+                contentPath: watcher.effectiveResponseContentPath)
         case .gemini:
             return GeminiInferenceBackend(modelId: watcher.modelId)
         }
