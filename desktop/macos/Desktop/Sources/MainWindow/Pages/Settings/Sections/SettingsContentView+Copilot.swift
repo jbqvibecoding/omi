@@ -33,6 +33,10 @@ extension SettingsContentView {
                                 .foregroundColor(OmiColors.textSecondary)
                         }
 
+                        CopilotPrepSheetRow(scenarioId: copilotScenarioId) {
+                            showCopilotPrepSheet = true
+                        }
+
                         copilotSubToggle(
                             title: "Auto-pick scenario from calendar",
                             subtitle: "Chooses the profile from your current calendar event.",
@@ -117,6 +121,9 @@ extension SettingsContentView {
                 }
                 .sheet(isPresented: $showDossierBrowser) {
                     DossierBrowserView { showDossierBrowser = false }
+                }
+                .sheet(isPresented: $showCopilotPrepSheet) {
+                    CopilotPrepSheetView { showCopilotPrepSheet = false }
                 }
             }
 
@@ -548,5 +555,36 @@ private struct CopilotTriggerPolicyRow: View {
             .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
         }
         .onAppear { policy = CopilotSettings.shared.triggerPolicy }
+    }
+}
+
+/// Entry point to the prep sheet, showing at a glance whether this scenario has anything
+/// filled in — an empty prep sheet is the difference between grounded suggestions and
+/// generic ones, so it should be visible without opening it.
+private struct CopilotPrepSheetRow: View {
+    @ObservedObject private var store = CopilotPrepSheetStore.shared
+    let scenarioId: String
+    let onOpen: () -> Void
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Prep for this scenario").scaledFont(size: 14)
+                    .foregroundColor(OmiColors.textPrimary)
+                Text(subtitle).scaledFont(size: 12).foregroundColor(OmiColors.textTertiary)
+            }
+            Spacer()
+            Button(store.sheet(for: scenarioId) == nil ? "Fill in" : "Edit") { onOpen() }
+                .buttonStyle(.plain).scaledFont(size: 12)
+                .foregroundColor(OmiColors.textSecondary)
+        }
+    }
+
+    private var subtitle: String {
+        guard let sheet = store.sheet(for: scenarioId) else {
+            return "Paste your résumé, the deal, the deck — whatever this kind of session runs on."
+        }
+        let filled = sheet.values.count
+        return "\(filled) filled in. The copilot reads this before every suggestion."
     }
 }

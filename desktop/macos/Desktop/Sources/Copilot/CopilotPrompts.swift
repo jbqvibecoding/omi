@@ -73,6 +73,7 @@ enum CopilotPrompts {
     )
 
     /// Builds the user prompt from the assembled context snapshot. Empty sections are omitted.
+    @MainActor
     static func userPrompt(context: CopilotContextEngine.Snapshot) -> String {
         var sections: [String] = []
 
@@ -94,6 +95,12 @@ enum CopilotPrompts {
 
         if let profile = context.userProfile, !profile.isEmpty {
             sections.append("What we know about the user:\n\(profile)")
+        }
+
+        if let prep = CopilotPrepSheetStore.shared.promptBlock(
+            for: CopilotSettings.shared.scenario)
+        {
+            sections.append(prep)
         }
 
         sections.append("The screenshot shows what the user is looking at right now. Infer their need and answer it.")
@@ -138,6 +145,7 @@ extension CopilotPrompts {
         Say SKIP if a similar suggestion was already given (see list), or when in doubt.
         """
 
+    @MainActor
     static func liveGateUserPrompt(
         transcript: String,
         recentSuggestions: [String],
@@ -146,6 +154,9 @@ extension CopilotPrompts {
         preferences: String? = nil
     ) -> String {
         var sections = [scenario.systemPromptBlock]
+        if let prep = CopilotPrepSheetStore.shared.promptBlock(for: scenario) {
+            sections.append(prep)
+        }
         if let preferences, !preferences.isEmpty { sections.append(preferences) }
         if !recentSuggestions.isEmpty {
             sections.append(
@@ -197,6 +208,7 @@ extension CopilotPrompts {
         """
     }
 
+    @MainActor
     static func liveSuggestionUserPrompt(
         transcript: String,
         gateType: String,
@@ -207,6 +219,11 @@ extension CopilotPrompts {
         preferences: String? = nil
     ) -> String {
         var sections: [String] = ["Trigger type: \(gateType)"]
+        if let prep = CopilotPrepSheetStore.shared.promptBlock(
+            for: CopilotSettings.shared.scenario)
+        {
+            sections.append(prep)
+        }
         if let preferences, !preferences.isEmpty { sections.append(preferences) }
         if !recentSuggestions.isEmpty {
             sections.append(

@@ -14,6 +14,19 @@ struct CopilotScenarioProfile: Identifiable, Equatable, Codable {
     let triggerVocabulary: [String]
     /// True for user-created profiles (persisted in CustomProfileStore).
     var isCustom: Bool = false
+    /// What this scenario needs the user to hand it before a session. Optional so
+    /// profiles stored before prep sheets existed still decode.
+    var prepSlots: [PrepSlotSpec]? = nil
+
+    /// Prep slots for this profile, falling back to one generic slot so every scenario —
+    /// including user-created ones — has somewhere to put session context.
+    var effectivePrepSlots: [PrepSlotSpec] {
+        prepSlots ?? [
+            PrepSlotSpec(
+                key: "context", label: "Context for this session",
+                placeholder: "Anything the copilot should know going in.")
+        ]
+    }
 
     static let meeting = CopilotScenarioProfile(
         id: "meeting",
@@ -24,7 +37,11 @@ struct CopilotScenarioProfile: Identifiable, Equatable, Codable {
             nobody answered, or a commitment the user made earlier that this moment relates to. \
             Do not summarize general discussion — live notes already do that.
             """,
-        triggerVocabulary: ["decide", "decision", "action item", "deadline", "follow up", "agreed", "next step"]
+        triggerVocabulary: ["decide", "decision", "action item", "deadline", "follow up", "agreed", "next step"],
+        prepSlots: [
+            PrepSlotSpec(key: "agenda", label: "What this meeting is for", placeholder: "The decision you need out of it, or the thread you are picking back up."),
+            PrepSlotSpec(key: "stakes", label: "What matters to you here", placeholder: "What you need to land, and anything you would rather not relitigate."),
+        ]
     )
 
     static let sales = CopilotScenarioProfile(
@@ -46,6 +63,10 @@ struct CopilotScenarioProfile: Identifiable, Equatable, Codable {
         triggerVocabulary: [
             "price", "pricing", "cost", "expensive", "budget", "competitor", "alternative",
             "concern", "worried", "hesitant", "contract", "discount", "think about it",
+        ],
+        prepSlots: [
+            PrepSlotSpec(key: "offering", label: "What you are selling", placeholder: "The product, the pricing you can actually offer, and your two strongest differentiators."),
+            PrepSlotSpec(key: "account", label: "This account", placeholder: "Who they are, what they have already told you, and where the deal currently stands."),
         ]
     )
 
@@ -57,8 +78,18 @@ struct CopilotScenarioProfile: Identifiable, Equatable, Codable {
             points of a strong answer (STAR framing when behavioral). If the user is the \
             interviewer, suggest a sharp follow-up question probing what was just said. \
             Keep it to skeleton points the user can speak from, never a script to read.
+
+            When the user has provided their background, build the answer out of THEIR \
+            actual projects, numbers and job history — name the specific thing. A generic \
+            STAR skeleton is what they could have written themselves; pointing them at the \
+            right story from their own history is the whole value. Never invent experience \
+            they did not list.
             """,
-        triggerVocabulary: ["tell me about", "why did you", "how would you", "experience with", "walk me through"]
+        triggerVocabulary: ["tell me about", "why did you", "how would you", "experience with", "walk me through"],
+        prepSlots: [
+            PrepSlotSpec(key: "background", label: "Your background", placeholder: "Paste your résumé, or the projects and numbers you want it to draw answers from."),
+            PrepSlotSpec(key: "role", label: "The role and company", placeholder: "Paste the job description, plus anything you know about the team or the interviewer."),
+        ]
     )
 
     static let support = CopilotScenarioProfile(
@@ -69,7 +100,11 @@ struct CopilotScenarioProfile: Identifiable, Equatable, Codable {
             root cause of the problem being described, the next diagnostic question to ask, \
             or a draft reply the user can adapt. Be concrete about steps, never generic empathy.
             """,
-        triggerVocabulary: ["not working", "error", "broken", "issue", "problem", "refund", "cancel", "bug"]
+        triggerVocabulary: ["not working", "error", "broken", "issue", "problem", "refund", "cancel", "bug"],
+        prepSlots: [
+            PrepSlotSpec(key: "product", label: "The product or system", placeholder: "What you support, and how the parts fit together."),
+            PrepSlotSpec(key: "known", label: "Known issues right now", placeholder: "Current incidents, recent regressions, and the workarounds you are allowed to give."),
+        ]
     )
 
     static let negotiation = CopilotScenarioProfile(
@@ -91,6 +126,10 @@ struct CopilotScenarioProfile: Identifiable, Equatable, Codable {
         triggerVocabulary: [
             "too high", "too expensive", "better deal", "other options", "walk away", "final offer",
             "terms", "counteroffer", "concession", "budget", "margin",
+        ],
+        prepSlots: [
+            PrepSlotSpec(key: "position", label: "Your position", placeholder: "What you want, what you can concede, and the point where you walk away."),
+            PrepSlotSpec(key: "counterparty", label: "What you know about them", placeholder: "Their constraints, their alternatives, and what they have already asked for."),
         ]
     )
 
@@ -109,6 +148,10 @@ struct CopilotScenarioProfile: Identifiable, Equatable, Codable {
         triggerVocabulary: [
             "which of the following", "true or false", "select the", "what is the", "define",
             "explain why", "answer",
+        ],
+        prepSlots: [
+            PrepSlotSpec(key: "subject", label: "What you are studying", placeholder: "The subject and the level, so explanations land where you actually are."),
+            PrepSlotSpec(key: "focus", label: "What you keep getting wrong", placeholder: "The topics worth extra care when it explains an answer."),
         ]
     )
 
@@ -122,7 +165,11 @@ struct CopilotScenarioProfile: Identifiable, Equatable, Codable {
             by a specific number or fact where possible. If a proper noun the audience may not know \
             just came up, define it in one line.
             """,
-        triggerVocabulary: ["question", "how does", "what about", "can you explain", "why", "does it"]
+        triggerVocabulary: ["question", "how does", "what about", "can you explain", "why", "does it"],
+        prepSlots: [
+            PrepSlotSpec(key: "material", label: "What you are presenting", placeholder: "Your outline, the numbers you will show, and the claims you will make."),
+            PrepSlotSpec(key: "room", label: "Who is in the room", placeholder: "Who they are, what they already know, and the questions you expect."),
+        ]
     )
 
     /// Profiles always available in the picker.

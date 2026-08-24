@@ -57,6 +57,14 @@ final class CopilotOrchestrator {
         }
 
         DesktopAutomationActionRegistry.shared.register(
+            name: "copilot_prep_dump",
+            summary: "Show the prep sheet for the active scenario: which slots it has and "
+                + "how much the user filled in."
+        ) { _ in
+            await MainActor.run { CopilotPrepSheetStore.shared.debugDump() }
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
             name: "copilot_suggest_now",
             summary: "Ask the live copilot for a suggestion right now, bypassing the word "
                 + "budget, cooldowns and pre-gate (same as the suggest-now shortcut)."

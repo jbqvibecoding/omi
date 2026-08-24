@@ -166,6 +166,7 @@ struct SettingsContentView: View {
   @State var copilotAutoScenario: Bool
   @State var showCopilotProfilesManager = false
   @State var showDossierBrowser = false
+  @State var showCopilotPrepSheet = false
   @State var copilotNotesRagEnabled: Bool
   @State var copilotNotesFolderPath: String
   @State var copilotNotesIndexStatus: String = ""

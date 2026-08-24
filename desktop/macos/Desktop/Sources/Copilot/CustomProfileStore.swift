@@ -22,7 +22,7 @@ final class CustomProfileStore: ObservableObject {
     private static func markCustom(_ p: CopilotScenarioProfile) -> CopilotScenarioProfile {
         CopilotScenarioProfile(
             id: p.id, displayName: p.displayName, systemPromptBlock: p.systemPromptBlock,
-            triggerVocabulary: p.triggerVocabulary, isCustom: true)
+            triggerVocabulary: p.triggerVocabulary, isCustom: true, prepSlots: p.prepSlots)
     }
 
     /// Create or update a custom profile. Returns the stored profile (with a stable id).
@@ -33,7 +33,10 @@ final class CustomProfileStore: ObservableObject {
         let profileId = id ?? "custom_\(UUID().uuidString.prefix(8))"
         let profile = CopilotScenarioProfile(
             id: profileId, displayName: displayName, systemPromptBlock: systemPromptBlock,
-            triggerVocabulary: triggerVocabulary, isCustom: true)
+            triggerVocabulary: triggerVocabulary, isCustom: true,
+            // Keep whatever prep slots this profile already had; the editor doesn't
+            // define them, so re-saving must not silently drop them.
+            prepSlots: profiles.first { $0.id == profileId }?.prepSlots)
         if let idx = profiles.firstIndex(where: { $0.id == profileId }) {
             profiles[idx] = profile
         } else {
