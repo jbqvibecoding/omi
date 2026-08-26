@@ -3236,6 +3236,9 @@ class FloatingControlBarManager {
         chatCancellable?.cancel()
         chatCancellable = nil
         barWindow.state.aiInputText = ""
+        // Every response clears the insert target; only presentCopilotResponse sets one,
+        // and it does so after this call.
+        barWindow.state.insertTargetPID = nil
         barWindow.state.displayedQuery = userText
         barWindow.state.currentAIMessage = assistantMessage
         barWindow.state.isAILoading = false
@@ -3289,8 +3292,12 @@ class FloatingControlBarManager {
     /// When `artifact` is set (a converted payload — LaTeX, a Markdown table, a #RRGGBB
     /// list, a translation, or recognized text), it's appended in a copyable form so the
     /// user can grab it directly.
+    ///
+    /// `targetPID` is the app the user pressed the shortcut in, captured before the capture
+    /// ran. It's what "Insert" types back into.
     func presentCopilotResponse(
-        headline: String, markdown: String, artifact: String? = nil, artifactKind: String? = nil
+        headline: String, markdown: String, artifact: String? = nil, artifactKind: String? = nil,
+        targetPID: pid_t? = nil
     ) {
         guard let window = window else { return }
         var text = headline.isEmpty ? markdown : "**\(headline)**\n\n\(markdown)"
@@ -3303,6 +3310,7 @@ class FloatingControlBarManager {
             assistantMessage: message,
             barWindow: window
         )
+        window.state.insertTargetPID = targetPID
     }
 
     /// Wraps a snap artifact for MarkdownUI: fenced code (copyable) for LaTeX / colors /

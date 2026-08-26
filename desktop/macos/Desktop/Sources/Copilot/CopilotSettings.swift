@@ -25,6 +25,7 @@ class CopilotSettings {
     private let answerLanguageKey = "copilotAnswerLanguage"
     private let responseLengthKey = "copilotResponseLength"
     private let triggerPolicyKey = "copilotTriggerPolicy"
+    private let insertModeKey = "copilotInsertMode"
 
     // MARK: - Default Values
 
@@ -51,6 +52,7 @@ class CopilotSettings {
             answerLanguageKey: CopilotAnswerLanguage.auto.id,
             responseLengthKey: CopilotResponseLength.adaptive.rawValue,
             triggerPolicyKey: CopilotTriggerPolicy.auto.rawValue,
+            insertModeKey: TextInsertion.InsertMode.type.rawValue,
         ])
     }
 
@@ -214,6 +216,20 @@ class CopilotSettings {
         }
         set {
             UserDefaults.standard.set(newValue.rawValue, forKey: triggerPolicyKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// How "Insert" puts text into the app you were typing in. Typing is the default
+    /// because it never touches the clipboard; pasting exists for terminals and the
+    /// Electron builds that ignore synthetic Unicode keystrokes.
+    var insertMode: TextInsertion.InsertMode {
+        get {
+            TextInsertion.InsertMode(
+                rawValue: UserDefaults.standard.string(forKey: insertModeKey) ?? "") ?? .type
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: insertModeKey)
             NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
         }
     }

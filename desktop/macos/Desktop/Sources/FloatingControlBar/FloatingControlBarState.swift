@@ -61,6 +61,10 @@ struct FloatingBarNotificationContext: Equatable {
     /// One-tap follow-up questions rendered as chips under a copilot suggestion.
     /// Same trailing-var-with-default reason as above.
     var followUps: [String]? = nil
+    /// The app that was frontmost when this card was presented, so "Insert" puts the text
+    /// back where the user was rather than wherever focus has drifted since. Captured at
+    /// presentation because omi's HUD can itself become key.
+    var targetPID: pid_t? = nil
 }
 
 /// A custom in-app notification rendered directly below the floating bar.
@@ -115,6 +119,12 @@ class FloatingControlBarState: NSObject, ObservableObject {
     @Published var isAILoading: Bool = true
     @Published var aiInputText: String = ""
     @Published var currentAIMessage: ChatMessage? = nil
+    /// The app that was frontmost when the visible answer was *asked for*, so "Insert" puts
+    /// the text back where the user was. Only Copilot Snap sets it — a snap starts from a
+    /// keypress inside the app being asked about, which is exactly the app the answer
+    /// belongs in. Cleared on every other kind of response so the affordance never appears
+    /// pointing at a stale target.
+    @Published var insertTargetPID: pid_t? = nil
     @Published var displayedQuery: String = ""
     @Published var currentQuestionMessageId: String? = nil
     @Published var inputViewHeight: CGFloat = 120

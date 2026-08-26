@@ -506,6 +506,11 @@ final class CopilotOrchestrator {
         let startedAt = Date()
         log("CopilotOrchestrator: snap triggered (\(source))")
 
+        // Read the frontmost app before anything else — the region picker and the bar both
+        // take focus, so by the time the answer exists this is no longer recoverable. This
+        // is the app "Insert" types back into; nil when there's nothing there to type into.
+        let targetPID = TextInsertion.insertableTargetPID()
+
         // The region picker is modal and takes as long as the user takes, so it runs
         // before the thinking state — showing "working on it" while they are still
         // dragging would be a lie.
@@ -556,7 +561,8 @@ final class CopilotOrchestrator {
                 headline: result.headline,
                 markdown: result.responseMarkdown,
                 artifact: artifact,
-                artifactKind: result.contentType
+                artifactKind: result.contentType,
+                targetPID: targetPID
             )
 
             let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1000)

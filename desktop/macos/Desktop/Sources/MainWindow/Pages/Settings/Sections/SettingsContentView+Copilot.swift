@@ -95,6 +95,7 @@ extension SettingsContentView {
                         Group {
                             CopilotTriggerPolicyRow()
                             CopilotAnswerStyleRow()
+                            CopilotInsertModeRow()
                         }
 
                         copilotSubToggle(
@@ -555,6 +556,39 @@ private struct CopilotTriggerPolicyRow: View {
             .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
         }
         .onAppear { policy = CopilotSettings.shared.triggerPolicy }
+    }
+}
+
+/// How "Insert" puts an answer back into the app you were in.
+///
+/// Typing is the default because it leaves the clipboard alone. It's a setting rather than
+/// something we detect, because the apps that swallow synthetic Unicode keystrokes —
+/// terminals, some Electron builds — fail silently, and "nothing happened" is not a signal
+/// we can act on from here.
+private struct CopilotInsertModeRow: View {
+    @State private var mode: TextInsertion.InsertMode = .type
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Insert answers by").scaledFont(size: 14)
+                    .foregroundColor(OmiColors.textPrimary)
+                Text(mode.subtitle).scaledFont(size: 12)
+                    .foregroundColor(OmiColors.textTertiary)
+            }
+            Spacer()
+            Picker("", selection: $mode) {
+                ForEach(TextInsertion.InsertMode.allCases, id: \.self) { option in
+                    Text(option.displayName).tag(option)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(width: 200)
+            .onChange(of: mode) { _, value in
+                CopilotSettings.shared.insertMode = value
+            }
+        }
+        .onAppear { mode = CopilotSettings.shared.insertMode }
     }
 }
 

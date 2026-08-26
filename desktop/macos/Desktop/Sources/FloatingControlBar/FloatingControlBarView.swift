@@ -877,11 +877,20 @@ struct FloatingControlBarView: View {
         }
     }
 
+    /// Name of the app an Insert button will type into, for its tooltip. Falls back to a
+    /// generic phrase if the app has quit since the card was generated — the insert itself
+    /// then no-ops, which is the right outcome.
+    private static func appName(for pid: pid_t) -> String {
+        NSRunningApplication(processIdentifier: pid)?.localizedName ?? "the app you were in"
+    }
+
     /// Width reserved under the overlaid action buttons so the text never runs beneath them.
     private func notificationActionSpacerWidth(_ notification: FloatingBarNotification) -> CGFloat {
         switch notification.assistantId {
         case "task": return 90       // Execute + X
-        case "copilot": return 150   // Copy + Execute + X
+        case "copilot":
+            // Copy + Execute + X, plus Insert when a target app was captured.
+            return notification.context?.targetPID == nil ? 150 : 208
         case "copilot_meeting": return 90  // Start + X
         case "watcher_approval": return 190  // Send + Always + X
         default: return 36           // X only
@@ -992,6 +1001,42 @@ struct FloatingControlBarView: View {
                 // itself) so the user can paste it mid-conversation, or hand the
                 // suggestion to an agent to act on.
                 if notification.assistantId == "copilot" {
+                    // Insert types the line straight back into the app the user was in when
+                    // the suggestion was generated, so a talk track doesn't need a manual
+                    // copy-switch-paste. Hidden when no target was captured — omi itself was
+                    // frontmost, or that app had no editable field focused.
+                    if let targetPID = notification.context?.targetPID {
+                        Button {
+                            let text = notification.context?.detail ?? notification.message
+                            CopilotFeedbackTuner.shared.record(
+                                notificationId: notification.id,
+                                bucket: notification.context?.feedbackBucket, outcome: .accepted)
+                            CopilotCorrectionLog.shared.recordCardOutcome(
+                                notificationId: notification.id,
+                                bucket: notification.context?.feedbackBucket,
+                                situation: notification.context?.contextSummary ?? notification.message,
+                                accepted: true)
+                            FloatingControlBarManager.shared.dismissCurrentNotification()
+                            Task { @MainActor in
+                                await TextInsertion.insertIntoTarget(text, pid: targetPID)
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "text.insert")
+                                    .font(.system(size: 9, weight: .bold))
+                                Text("Insert")
+                                    .scaledFont(size: 10, weight: .semibold)
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.white.opacity(0.18))
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Type this into \(Self.appName(for: targetPID))")
+                    }
+
                     Button {
                         let textToCopy = notification.context?.detail ?? notification.message
                         NSPasteboard.general.clearContents()

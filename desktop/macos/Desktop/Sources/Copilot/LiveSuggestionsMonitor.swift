@@ -491,7 +491,10 @@ final class LiveSuggestionsMonitor: ObservableObject {
             reasoning: gateType,
             detail: detail.isEmpty ? nil : detail,
             feedbackBucket: "\(CopilotSettings.shared.scenario.id):\(gateType)",
-            followUps: result.usableFollowUps.isEmpty ? nil : result.usableFollowUps
+            followUps: result.usableFollowUps.isEmpty ? nil : result.usableFollowUps,
+            // Captured now, while the user is still in the app they're meeting from —
+            // and only when there's somewhere in it to actually put the line.
+            targetPID: TextInsertion.insertableTargetPID()
         )
         // While presenting, only surface audience-driven cards (questions / term definitions);
         // the presenter's own narration shouldn't trigger interruptions. Suppressed suggestions
