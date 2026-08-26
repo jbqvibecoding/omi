@@ -18,6 +18,7 @@ class GlobalShortcutManager {
         case clickThrough = 4
         case suggestNow = 5
         case snapRegion = 6
+        case quickReply = 7
     }
 
     private var shortcutObserver: NSObjectProtocol?
@@ -25,6 +26,7 @@ class GlobalShortcutManager {
     private var clickThroughShortcutObserver: NSObjectProtocol?
     private var suggestNowShortcutObserver: NSObjectProtocol?
     private var snapRegionShortcutObserver: NSObjectProtocol?
+    private var quickReplyShortcutObserver: NSObjectProtocol?
 
     private init() {
         var eventType = EventTypeSpec(
@@ -66,6 +68,15 @@ class GlobalShortcutManager {
             self?.registerSnapRegion()
         }
 
+        // Re-register the quick-reply shortcut when user changes it in settings
+        quickReplyShortcutObserver = NotificationCenter.default.addObserver(
+            forName: ShortcutSettings.quickReplyShortcutChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.registerQuickReply()
+        }
+
         // Re-register the suggest-now shortcut when user changes it in settings
         suggestNowShortcutObserver = NotificationCenter.default.addObserver(
             forName: ShortcutSettings.suggestNowShortcutChanged,
@@ -98,6 +109,8 @@ class GlobalShortcutManager {
         registerSuggestNow()
         // Register the region-snap shortcut from user settings
         registerSnapRegion()
+        // Register the quick-reply shortcut from user settings
+        registerQuickReply()
     }
 
     func setRegistrationSuspended(_ suspended: Bool) {
@@ -169,6 +182,26 @@ class GlobalShortcutManager {
         }
         registerHotKey(keyCode: Int(keyCode), modifiers: shortcut.carbonModifiers, id: .snapRegion)
         NSLog("GlobalShortcutManager: Registered region-snap shortcut: \(shortcut.displayLabel)")
+    }
+
+    private func registerQuickReply() {
+        guard !isRegistrationSuspended else { return }
+        if let ref = hotKeyRefs.removeValue(forKey: .quickReply) {
+            UnregisterEventHotKey(ref)
+        }
+        let (enabled, shortcut) = MainActor.assumeIsolated {
+            (ShortcutSettings.shared.quickReplyEnabled, ShortcutSettings.shared.quickReplyShortcut)
+        }
+        guard enabled else {
+            NSLog("GlobalShortcutManager: Quick-reply shortcut is disabled")
+            return
+        }
+        guard shortcut.supportsGlobalHotKey, let keyCode = shortcut.keyCode else {
+            NSLog("GlobalShortcutManager: Quick-reply shortcut is not a registerable hotkey")
+            return
+        }
+        registerHotKey(keyCode: Int(keyCode), modifiers: shortcut.carbonModifiers, id: .quickReply)
+        NSLog("GlobalShortcutManager: Registered quick-reply shortcut: \(shortcut.displayLabel)")
     }
 
     private func registerSuggestNow() {
@@ -267,6 +300,13 @@ class GlobalShortcutManager {
                 Task { @MainActor in
                     await CopilotOrchestrator.shared.triggerSnap(
                         source: "hotkey_region", selectRegion: true)
+                }
+            }
+        case .quickReply:
+            NSLog("GlobalShortcutManager: Quick-reply shortcut detected")
+            DispatchQueue.main.async {
+                Task { @MainActor in
+                    await QuickReplyOrchestrator.shared.trigger(source: "hotkey")
                 }
             }
         case .suggestNow:

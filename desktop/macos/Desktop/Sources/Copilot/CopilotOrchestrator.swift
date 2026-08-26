@@ -28,6 +28,10 @@ final class CopilotOrchestrator {
         // Boot user-defined watcher agents (each runs its own loop when enabled).
         WatcherRuntime.shared.start()
 
+        // Quick Reply shares the copilot's lifecycle; registering here keeps the family
+        // in one place rather than adding another startup call site.
+        QuickReplyOrchestrator.shared.setup()
+
         // Housekeeping for the knowledge base — curation and dedup, each at most once a day.
         // Delayed so a launch isn't competing with the app coming up.
         Task { @MainActor in

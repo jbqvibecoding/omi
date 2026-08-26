@@ -16,6 +16,7 @@ class ShortcutSettings: ObservableObject {
     nonisolated static let clickThroughShortcutChanged = Notification.Name("ShortcutSettings.clickThroughShortcutChanged")
     nonisolated static let suggestNowShortcutChanged = Notification.Name("ShortcutSettings.suggestNowShortcutChanged")
     nonisolated static let snapRegionShortcutChanged = Notification.Name("ShortcutSettings.snapRegionShortcutChanged")
+    nonisolated static let quickReplyShortcutChanged = Notification.Name("ShortcutSettings.quickReplyShortcutChanged")
 
     /// Notification posted when stealth mode is toggled so windows can refresh content protection.
     nonisolated static let stealthModeChanged = Notification.Name("ShortcutSettings.stealthModeChanged")
@@ -314,6 +315,13 @@ class ShortcutSettings: ObservableObject {
         keyCode: 36, keyDisplay: "↩", modifiers: [.control, .option])
     static let defaultSnapRegionShortcut = snapRegionShortcut
 
+    // Quick Reply — draft the message you're about to type. ⌃⌥R, deliberately NOT cetus's
+    // double-tap right ⌥: omi's push-to-talk default is hold-⌥, and a double-tap on the
+    // same key would fight it every time.
+    static let quickReplyShortcut = KeyboardShortcut(
+        keyCode: 15, keyDisplay: "R", modifiers: [.control, .option])
+    static let defaultQuickReplyShortcut = quickReplyShortcut
+
     // Click-through toggle (default ⌘M, matching cheating-daddy/glass Cmd+M convention).
     static let clickThroughCommandMShortcut = KeyboardShortcut(keyCode: 46, keyDisplay: "M", modifiers: .command)
     static let defaultClickThroughShortcut = clickThroughCommandMShortcut
@@ -393,6 +401,21 @@ class ShortcutSettings: ObservableObject {
         didSet {
             UserDefaults.standard.set(snapRegionEnabled, forKey: "shortcut_snapRegionEnabled")
             NotificationCenter.default.post(name: Self.snapRegionShortcutChanged, object: nil)
+        }
+    }
+
+    /// Draft a reply into whatever text field is focused.
+    @Published var quickReplyShortcut: KeyboardShortcut {
+        didSet {
+            persistShortcut(quickReplyShortcut, forKey: Self.quickReplyShortcutDefaultsKey)
+            NotificationCenter.default.post(name: Self.quickReplyShortcutChanged, object: nil)
+        }
+    }
+
+    @Published var quickReplyEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(quickReplyEnabled, forKey: "shortcut_quickReplyEnabled")
+            NotificationCenter.default.post(name: Self.quickReplyShortcutChanged, object: nil)
         }
     }
 
@@ -639,6 +662,7 @@ class ShortcutSettings: ObservableObject {
     private static let clickThroughShortcutDefaultsKey = "shortcut_clickThroughKey"
     private static let suggestNowShortcutDefaultsKey = "shortcut_suggestNowKey"
     private static let snapRegionShortcutDefaultsKey = "shortcut_snapRegionKey"
+    private static let quickReplyShortcutDefaultsKey = "shortcut_quickReplyKey"
 
     private init() {
         self.pttShortcut = Self.loadShortcut(
@@ -671,12 +695,18 @@ class ShortcutSettings: ObservableObject {
             legacyMapper: { _ in nil }
         ) ?? Self.defaultSnapRegionShortcut
 
+        self.quickReplyShortcut = Self.loadShortcut(
+            forKey: Self.quickReplyShortcutDefaultsKey,
+            legacyMapper: { _ in nil }
+        ) ?? Self.defaultQuickReplyShortcut
+
         self.askOmiEnabled = UserDefaults.standard.object(forKey: "shortcut_askOmiEnabled") as? Bool ?? true
         self.copilotEnabled = UserDefaults.standard.object(forKey: "shortcut_copilotEnabled") as? Bool ?? true
         self.stealthModeEnabled = UserDefaults.standard.object(forKey: "shortcut_stealthModeEnabled") as? Bool ?? true
         self.clickThroughEnabled = UserDefaults.standard.object(forKey: "shortcut_clickThroughEnabled") as? Bool ?? true
         self.suggestNowEnabled = UserDefaults.standard.object(forKey: "shortcut_suggestNowEnabled") as? Bool ?? true
         self.snapRegionEnabled = UserDefaults.standard.object(forKey: "shortcut_snapRegionEnabled") as? Bool ?? true
+        self.quickReplyEnabled = UserDefaults.standard.object(forKey: "shortcut_quickReplyEnabled") as? Bool ?? true
         self.pttEnabled = UserDefaults.standard.object(forKey: "shortcut_pttEnabled") as? Bool ?? true
         self.doubleTapForLock = UserDefaults.standard.object(forKey: "shortcut_doubleTapForLock") as? Bool ?? true
         self.solidBackground = UserDefaults.standard.object(forKey: "shortcut_solidBackground") as? Bool ?? false

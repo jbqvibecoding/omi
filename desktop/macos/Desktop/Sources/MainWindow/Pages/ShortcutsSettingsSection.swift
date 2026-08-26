@@ -314,6 +314,20 @@ struct ShortcutsSettingsSection: View {
         shortcutRow(
           label: "Locked listening", keys: settings.pttShortcut.displayLabel + " \u{00D7}2")
       }
+
+      // The copilot shortcuts have no editor of their own yet, so this card is the only
+      // place they're discoverable. Grouped to stay inside ViewBuilder's ten-child limit.
+      Group {
+        shortcutRow(
+          label: "Quick reply",
+          keys: settings.quickReplyEnabled ? settings.quickReplyShortcut.displayLabel : "Disabled")
+        shortcutRow(
+          label: "Snap a region",
+          keys: settings.snapRegionEnabled ? settings.snapRegionShortcut.displayLabel : "Disabled")
+        shortcutRow(
+          label: "Suggest now",
+          keys: settings.suggestNowEnabled ? settings.suggestNowShortcut.displayLabel : "Disabled")
+      }
     }
     .padding(20)
     .background(
