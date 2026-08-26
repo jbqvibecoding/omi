@@ -161,14 +161,21 @@ final class AmbientTextContext: ObservableObject {
                 text: result.text))
     }
 
-    /// `~0` is `kCGAnyInputEventType` — CoreGraphics' "any of them" sentinel, which has no
-    /// Swift-side name. Falling back to `.null` if that ever stops being a valid raw value
-    /// means the idle check degrades to "never idle", not to a crash.
-    private static let anyInputEvent = CGEventType(rawValue: ~0) ?? .null
+    /// Asked one concrete event type at a time on purpose. CoreGraphics has an
+    /// "any input event" sentinel, but its raw value has no case in the Swift-imported
+    /// enum, so building it goes through a failable initializer that returns nil — and the
+    /// obvious fallback silently reports "idle forever", which would switch this feature
+    /// off with nothing to see. The minimum across the real types is exact and can't fail.
+    private static let inputEventTypes: [CGEventType] = [
+        .keyDown, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown,
+        .mouseMoved, .scrollWheel,
+    ]
 
     private var isScreenIdle: Bool {
-        let idle = CGEventSource.secondsSinceLastEventType(
-            .hidSystemState, eventType: Self.anyInputEvent)
+        let idle =
+            Self.inputEventTypes
+            .map { CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: $0) }
+            .min() ?? 0
         return idle > idleThreshold
     }
 

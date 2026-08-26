@@ -64,6 +64,11 @@ final class QuickReplyOrchestrator {
         let appName = app.localizedName ?? "the app you were in"
         let bundleId = app.bundleIdentifier
 
+        // Take the frame before the panel appears, or our own window sits on top of the
+        // thread being replied to. Stealth mode normally keeps it out of captures, but
+        // that's a setting the user can switch off, and this shouldn't depend on it.
+        let rawScreenshot = ScreenCaptureManager.captureScreenJPEG()
+
         QuickReplyPanel.shared.present(
             targetAppName: appName,
             onInsert: { text in
@@ -81,10 +86,9 @@ final class QuickReplyOrchestrator {
         )
         let model = QuickReplyPanel.shared.model
 
-        // Capture and context in parallel; the URL only when this is actually a browser.
+        // Context assembly in parallel; the URL only when this is actually a browser.
         async let snapshotTask = CopilotContextEngine.shared.snapshot()
         async let urlTask = BrowserURL.current(bundleId: bundleId)
-        let rawScreenshot = ScreenCaptureManager.captureScreenJPEG()
         let context = await snapshotTask
         let url = await urlTask
 

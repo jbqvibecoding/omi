@@ -141,7 +141,12 @@ enum InsertCorrectionWatcher {
             guard let baseline = AXFocusedText.capture(pid: pid) else { return }
 
             var elapsed = baselineDelay
-            var recorded = 0
+            // Both probes diff against the same baseline, so the later one re-derives every
+            // pair the earlier one already saw. Counting those twice would let a single
+            // insertion push a pair over the two-insertions threshold on its own, which is
+            // exactly the thing the threshold exists to prevent.
+            var seen: Set<String> = []
+            var lastState: String?
             for delay in probeDelays {
                 let wait = delay - elapsed
                 if wait > 0 {
@@ -152,46 +157,49 @@ enum InsertCorrectionWatcher {
                     current.isSameTarget(as: baseline),
                     current.text != baseline.text
                 else { continue }
-                recorded += apply(
+                lastState = current.text
+                recordWordPairs(
                     baseline: baseline.text, current: current.text, inserted: inserted,
-                    budget: InsertCorrectionStore.maxPairsPerInsertion - recorded)
+                    seen: &seen)
+            }
+
+            // The style pair is taken once, from where the text finally settled — an
+            // in-progress edit at +1.2s is not what the user meant to write.
+            if let final = lastState {
+                recordStylePair(baseline: baseline.text, final: final, inserted: inserted)
             }
         }
     }
 
-    /// Diff the two readings and record what changed. Returns how many pairs were taken.
-    private static func apply(
-        baseline: String, current: String, inserted: String, budget: Int
-    ) -> Int {
-        guard budget > 0 else { return 0 }
-
-        // The whole-line pair, which is what the style learner wants: it needs enough text
-        // to say something about voice, and it only means anything if omi wrote the bulk of
-        // what's there.
+    /// The whole-line pair, which is what the style learner wants: it needs enough text to
+    /// say something about voice, and it only means anything if omi wrote the bulk of the
+    /// field rather than one line inside someone else's document.
+    private static func recordStylePair(baseline: String, final: String, inserted: String) {
         let coverage = baseline.isEmpty ? 0 : Double(inserted.count) / Double(baseline.count)
-        if coverage >= styleCoverageThreshold {
-            CopilotStyleLearner.shared.recordCorrection(suggested: inserted, actual: current)
-        }
+        guard coverage >= styleCoverageThreshold else { return }
+        CopilotStyleLearner.shared.recordCorrection(suggested: inserted, actual: final)
+    }
 
-        // The word-level pairs, which are what the recognizer wants. Only edits to text omi
-        // actually typed count — the user rewriting their own surrounding sentence is not a
-        // correction of ours.
+    /// The word-level pairs, which are what the recognizer wants. Only edits to text omi
+    /// actually typed count — the user rewriting their own surrounding sentence is not a
+    /// correction of ours.
+    private static func recordWordPairs(
+        baseline: String, current: String, inserted: String, seen: inout Set<String>
+    ) {
         let insertedLower = inserted.lowercased()
-        var taken = 0
         for pair in TokenDiff.pairs(from: baseline, to: current) {
-            guard taken < budget else { break }
-            guard pair.wrong.count <= InsertCorrectionStore.maxSideChars,
+            guard seen.count < InsertCorrectionStore.maxPairsPerInsertion else { return }
+            let key = "\(pair.wrong)\u{0}\(pair.right)"
+            guard !seen.contains(key),
+                pair.wrong.count <= InsertCorrectionStore.maxSideChars,
                 pair.right.count <= InsertCorrectionStore.maxSideChars,
                 insertedLower.contains(pair.wrong.lowercased())
             else { continue }
-            let confirmed = InsertCorrectionStore.shared.record(
-                wrong: pair.wrong, right: pair.right)
-            taken += 1
-            if confirmed {
+            seen.insert(key)
+            if InsertCorrectionStore.shared.record(wrong: pair.wrong, right: pair.right) {
                 log("InsertCorrectionWatcher: learned \(pair.wrong) → \(pair.right)")
             }
         }
-        return taken
     }
 }
 

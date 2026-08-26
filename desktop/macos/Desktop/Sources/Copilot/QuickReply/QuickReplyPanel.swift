@@ -206,19 +206,30 @@ private struct QuickReplyView: View {
                 .scaledFont(size: 10)
                 .foregroundColor(.white.opacity(0.45))
             Spacer()
-            Button("Discard") { onCancel() }
-                .buttonStyle(.plain)
-                .scaledFont(size: 11)
-                .foregroundColor(.white.opacity(0.6))
-            Button("Insert") { onInsert(model.draft) }
-                .buttonStyle(.plain)
-                .scaledFont(size: 11, weight: .semibold)
-                .foregroundColor(.white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(Color.white.opacity(0.18))
-                .clipShape(Capsule())
-                .disabled(model.isLoading)
+            Button { onCancel() } label: {
+                Text("Discard")
+                    .scaledFont(size: 11)
+                    .foregroundColor(.white.opacity(0.6))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            // Padding and background live inside the label: a `.plain` button only
+            // hit-tests its label, so styling applied outside it would look clickable
+            // without being clickable.
+            Button { onInsert(model.draft) } label: {
+                Text("Insert")
+                    .scaledFont(size: 11, weight: .semibold)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Color.white.opacity(0.18))
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(model.isLoading)
         }
     }
 }
