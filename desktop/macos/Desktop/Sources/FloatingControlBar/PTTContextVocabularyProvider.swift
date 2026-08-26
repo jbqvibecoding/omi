@@ -19,9 +19,18 @@ enum PTTContextVocabularyProvider {
     let settingsVocabulary = await MainActor.run {
       AssistantSettings.shared.effectiveVocabulary
     }
+    // Terms the user has fixed by hand at least twice after omi typed them. Stronger
+    // evidence of the spelling they want than anything OCR can offer, so they go in
+    // alongside the vocabulary the user configured explicitly.
+    let correctedTerms = await MainActor.run {
+      InsertCorrectionStore.shared.confirmedTerms()
+    }
 
     var collector = KeywordCollector(limit: maxKeywords)
     for term in settingsVocabulary {
+      collector.add(term)
+    }
+    for term in correctedTerms {
       collector.add(term)
     }
 

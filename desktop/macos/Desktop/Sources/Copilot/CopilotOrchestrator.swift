@@ -341,6 +341,21 @@ final class CopilotOrchestrator {
         }
 
         DesktopAutomationActionRegistry.shared.register(
+            name: "copilot_corrections_dump",
+            summary: "Show the wrong→right pairs learned from edits the user made to text omi "
+                + "typed in. Pass clear=1 to forget them all.",
+            params: ["clear"]
+        ) { params in
+            await MainActor.run { () -> [String: String] in
+                if params["clear"] == "1" {
+                    InsertCorrectionStore.shared.clear()
+                    return ["cleared": "true"]
+                }
+                return InsertCorrectionStore.shared.debugDump()
+            }
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
             name: "copilot_style_relearn",
             summary: "Relearn the style card now from your recent spoken lines and corrections."
         ) { _ in

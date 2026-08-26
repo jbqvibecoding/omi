@@ -111,6 +111,9 @@ enum TextInsertion {
                 pasteboard.setString(saved, forType: .string)
             }
         }
+        // What the user does to this text in the next few seconds is the only unambiguous
+        // signal we get about what omi got wrong.
+        if let pid { InsertCorrectionWatcher.observe(inserted: text, pid: pid) }
         return true
     }
 
