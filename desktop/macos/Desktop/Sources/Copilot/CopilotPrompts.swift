@@ -89,6 +89,18 @@ enum CopilotPrompts {
             sections.append("Recent conversation transcript (most recent last):\n\(context.transcriptWindow)")
         }
 
+        if let url = context.pageURL, !url.isEmpty {
+            sections.append("Page the user is on: \(url)")
+        }
+
+        if !context.ambientText.isEmpty {
+            // Distinguished from OCR on purpose: this came from the app's own accessibility
+            // tree, so it's exact. When the two disagree, this one is right.
+            sections.append(
+                "Text from the apps the user has been in, read from the apps themselves "
+                    + "(exact, most recent last):\n\(context.ambientText)")
+        }
+
         if !context.recentOCR.isEmpty {
             sections.append("Recent on-screen text from the user's activity (OCR, may be noisy):\n\(context.recentOCR)")
         }

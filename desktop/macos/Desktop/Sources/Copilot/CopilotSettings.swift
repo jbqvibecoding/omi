@@ -26,6 +26,7 @@ class CopilotSettings {
     private let responseLengthKey = "copilotResponseLength"
     private let triggerPolicyKey = "copilotTriggerPolicy"
     private let insertModeKey = "copilotInsertMode"
+    private let ambientTextEnabledKey = "copilotAmbientTextEnabled"
 
     // MARK: - Default Values
 
@@ -53,6 +54,7 @@ class CopilotSettings {
             responseLengthKey: CopilotResponseLength.adaptive.rawValue,
             triggerPolicyKey: CopilotTriggerPolicy.auto.rawValue,
             insertModeKey: TextInsertion.InsertMode.type.rawValue,
+            ambientTextEnabledKey: false,
         ])
     }
 
@@ -230,6 +232,18 @@ class CopilotSettings {
         }
         set {
             UserDefaults.standard.set(newValue.rawValue, forKey: insertModeKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Whether omi keeps a running plain-text record of what's on screen — the app's own
+    /// text and, in a browser, the real URL. Off by default: it reads the accessibility
+    /// tree of whatever you're looking at, which is a bigger ask than a screenshot even
+    /// though it costs less.
+    var ambientTextEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: ambientTextEnabledKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: ambientTextEnabledKey)
             NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
         }
     }

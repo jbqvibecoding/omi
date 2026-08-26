@@ -17,6 +17,13 @@ final class CopilotContextEngine {
         let transcriptWindow: String
         /// Recent OCR text, current app first. Privacy exclusions applied.
         let recentOCR: String
+        /// The app's own text, read from the accessibility tree rather than pixels. Empty
+        /// unless ambient context is switched on. Kept separate from `recentOCR` because
+        /// it is exact where OCR is noisy, and the model should weigh them differently.
+        let ambientText: String
+        /// The page the user is on, when they were in a browser. Nothing else in the
+        /// snapshot can supply this — OCR of an address bar is a guess.
+        let pageURL: String?
         let userProfile: String?
     }
 
@@ -28,6 +35,8 @@ final class CopilotContextEngine {
         let transcript = buildTranscriptWindow(maxWords: maxTranscriptWords)
         let ocr = await buildRecentOCR(activeApp: activeApp, maxChars: maxOCRChars)
         let profile = await AIUserProfileService.shared.getLatestProfile()?.profileText
+        let ambient = AmbientTextContext.shared
+        let ambientText = CopilotSettings.shared.ambientTextEnabled ? ambient.promptBlock() : ""
 
         return Snapshot(
             capturedAt: Date(),
@@ -35,6 +44,8 @@ final class CopilotContextEngine {
             windowTitle: nil,
             transcriptWindow: transcript,
             recentOCR: ocr,
+            ambientText: ambientText,
+            pageURL: CopilotSettings.shared.ambientTextEnabled ? ambient.currentURL : nil,
             userProfile: profile
         )
     }

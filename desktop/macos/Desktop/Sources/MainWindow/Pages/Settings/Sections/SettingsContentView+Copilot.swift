@@ -128,6 +128,10 @@ extension SettingsContentView {
                 }
             }
 
+            settingsCard(settingId: "copilot.ambient") {
+                CopilotAmbientContextRow()
+            }
+
             // Answers from your notes (notes-folder retrieval)
             settingsCard(settingId: "copilot.notes") {
                 VStack(alignment: .leading, spacing: 16) {
@@ -247,7 +251,7 @@ extension SettingsContentView {
                 ) { ShortcutSettings.shared.stealthModeEnabled = $0 }
             }
 
-            Text("Copilot Snap: press your shortcut (default ⌃Return) for an instant answer about your screen. Double-press to talk live. Configure the shortcut under Shortcuts.")
+            Text("Copilot Snap: press your shortcut (default ⌃Return) for an instant answer about your screen. Double-press to talk live. Quick Reply (⌃⌥R) drafts the message you're about to type, wherever your cursor is. Configure the shortcuts under Shortcuts.")
                 .scaledFont(size: 12)
                 .foregroundColor(OmiColors.textTertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -556,6 +560,85 @@ private struct CopilotTriggerPolicyRow: View {
             .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
         }
         .onAppear { policy = CopilotSettings.shared.triggerPolicy }
+    }
+}
+
+/// Ambient text context — the running record of what's on screen.
+///
+/// Off by default and said plainly, because "reads the text of every app you use" is a
+/// bigger ask than a screenshot even though it costs the machine less. The excluded-apps
+/// list is the screen-recording one on purpose: two lists that both mean "not this app"
+/// would be a trap.
+private struct CopilotAmbientContextRow: View {
+    @State private var enabled = false
+    @State private var entryCount = 0
+    @State private var latest = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "text.viewfinder").scaledFont(size: 16)
+                    .foregroundColor(OmiColors.textTertiary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Read what's on screen as text").scaledFont(size: 16, weight: .semibold)
+                        .foregroundColor(OmiColors.textPrimary)
+                    Text(
+                        "Lets the copilot see the app's own text and the real page URL, not just "
+                            + "a picture of it. Costs far less than screenshots."
+                    )
+                    .scaledFont(size: 13).foregroundColor(OmiColors.textSecondary)
+                }
+                Spacer()
+                Toggle("", isOn: $enabled).toggleStyle(.switch).labelsHidden()
+                    .onChange(of: enabled) { _, value in
+                        CopilotSettings.shared.ambientTextEnabled = value
+                        refresh()
+                    }
+            }
+
+            if enabled {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Kept in memory for 30 minutes, never written to disk.")
+                            .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+                        Text(statusLine)
+                            .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+                            .lineLimit(1).truncationMode(.middle)
+                    }
+                    Spacer()
+                    Button("Refresh") { refresh() }
+                        .buttonStyle(.plain).scaledFont(size: 12)
+                        .foregroundColor(OmiColors.textSecondary)
+                    Button("Forget all") {
+                        AmbientTextContext.shared.clear()
+                        refresh()
+                    }
+                    .buttonStyle(.plain).scaledFont(size: 12)
+                    .foregroundColor(OmiColors.textSecondary)
+                }
+
+                Text("Apps you excluded from screen recording are skipped here too.")
+                    .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+            }
+        }
+        .onAppear {
+            enabled = CopilotSettings.shared.ambientTextEnabled
+            refresh()
+        }
+    }
+
+    private var statusLine: String {
+        guard entryCount > 0 else { return "Nothing captured yet." }
+        return latest.isEmpty
+            ? "\(entryCount) readings held."
+            : "\(entryCount) readings held · latest: \(latest)"
+    }
+
+    private func refresh() {
+        let dump = AmbientTextContext.shared.debugDump()
+        entryCount = Int(dump["entries"] ?? "0") ?? 0
+        let app = dump["latest_app"] ?? "-"
+        latest = app == "-" ? "" : app
     }
 }
 

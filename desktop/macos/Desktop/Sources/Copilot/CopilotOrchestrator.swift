@@ -32,6 +32,9 @@ final class CopilotOrchestrator {
         // in one place rather than adding another startup call site.
         QuickReplyOrchestrator.shared.setup()
 
+        // Follows its own setting — this only subscribes it to the switch.
+        AmbientTextContext.shared.start()
+
         // Housekeeping for the knowledge base — curation and dedup, each at most once a day.
         // Delayed so a launch isn't competing with the app coming up.
         Task { @MainActor in
@@ -338,6 +341,21 @@ final class CopilotOrchestrator {
                 + "plus how much of your own speech it learned from."
         ) { _ in
             await MainActor.run { CopilotStyleLearner.shared.debugDump() }
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
+            name: "copilot_ambient_dump",
+            summary: "Show what ambient text context has captured: entries held, how many "
+                + "carry a real URL, and the latest app. Pass clear=1 to forget it all.",
+            params: ["clear"]
+        ) { params in
+            await MainActor.run { () -> [String: String] in
+                if params["clear"] == "1" {
+                    AmbientTextContext.shared.clear()
+                    return ["cleared": "true"]
+                }
+                return AmbientTextContext.shared.debugDump()
+            }
         }
 
         DesktopAutomationActionRegistry.shared.register(
