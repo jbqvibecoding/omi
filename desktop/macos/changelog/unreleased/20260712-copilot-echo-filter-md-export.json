@@ -1,0 +1,3 @@
+{
+  "change": "On-device transcription no longer duplicates the other party's words as yours (acoustic echo suppression), and meetings can be auto-exported as markdown with minutes and a timestamped transcript"
+}

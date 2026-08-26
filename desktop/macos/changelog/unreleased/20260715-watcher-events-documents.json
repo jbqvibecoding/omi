@@ -1,0 +1,3 @@
+{
+  "change": "Watchers can now wake on things that happen rather than only on the clock — describe what they should listen for in plain English — pace their own checks, and keep a living document up to date instead of interrupting you"
+}

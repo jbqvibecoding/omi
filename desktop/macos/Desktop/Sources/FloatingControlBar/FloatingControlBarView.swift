@@ -820,6 +820,83 @@ struct FloatingControlBarView: View {
         )
     }
 
+    /// Follow-up questions to render as chips under a copilot suggestion.
+    private func followUpChips(_ notification: FloatingBarNotification) -> [String] {
+        guard notification.assistantId == "copilot" else { return [] }
+        return notification.context?.followUps ?? []
+    }
+
+    /// One-tap follow-ups, generated from the conversation that produced the suggestion.
+    ///
+    /// Tapping hands the question to an agent rather than opening the card's own chat:
+    /// the floating bar has no "ask this specific text" entry point, and spawning is the
+    /// same path the Execute button already uses.
+    @ViewBuilder
+    private func followUpChipRow(_ notification: FloatingBarNotification) -> some View {
+        let chips = followUpChips(notification)
+        if !chips.isEmpty {
+            HStack(spacing: 6) {
+                ForEach(chips, id: \.self) { question in
+                    Button {
+                        let model = ShortcutSettings.shared.selectedModel.isEmpty
+                            ? ModelQoS.Claude.defaultSelection
+                            : ShortcutSettings.shared.selectedModel
+                        var details = notification.message
+                        if let detail = notification.context?.detail, !detail.isEmpty {
+                            details += "\nDetails: \(detail)"
+                        }
+                        _ = AgentPillsManager.shared.spawn(
+                            query: ProactiveTaskExecute.buildQuery(
+                                title: question, message: details),
+                            model: model,
+                            systemPromptSuffix: ProactiveTaskExecute.systemPromptSuffix
+                        )
+                        CopilotFeedbackTuner.shared.record(
+                            notificationId: notification.id,
+                            bucket: notification.context?.feedbackBucket, outcome: .accepted)
+                        CopilotCorrectionLog.shared.recordCardOutcome(
+                            notificationId: notification.id,
+                            bucket: notification.context?.feedbackBucket,
+                            situation: notification.context?.contextSummary ?? notification.message,
+                            accepted: true)
+                        FloatingControlBarManager.shared.dismissCurrentNotification()
+                    } label: {
+                        Text(question)
+                            .scaledFont(size: 10, weight: .medium)
+                            .foregroundColor(.white.opacity(0.85))
+                            .lineLimit(1)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.white.opacity(0.10))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Ask this as a follow-up")
+                }
+            }
+        }
+    }
+
+    /// Name of the app an Insert button will type into, for its tooltip. Falls back to a
+    /// generic phrase if the app has quit since the card was generated — the insert itself
+    /// then no-ops, which is the right outcome.
+    private static func appName(for pid: pid_t) -> String {
+        NSRunningApplication(processIdentifier: pid)?.localizedName ?? "the app you were in"
+    }
+
+    /// Width reserved under the overlaid action buttons so the text never runs beneath them.
+    private func notificationActionSpacerWidth(_ notification: FloatingBarNotification) -> CGFloat {
+        switch notification.assistantId {
+        case "task": return 90       // Execute + X
+        case "copilot":
+            // Copy + Execute + X, plus Insert when a target app was captured.
+            return notification.context?.targetPID == nil ? 150 : 208
+        case "copilot_meeting": return 90  // Start + X
+        case "watcher_approval": return 190  // Send + Always + X
+        default: return 36           // X only
+        }
+    }
+
     private func notificationView(_ notification: FloatingBarNotification) -> some View {
         // The entire card opens the chat. A SwiftUI Button only hit-tests its
         // visible content, so the previous layout left the padding and spacer
@@ -852,14 +929,23 @@ struct FloatingControlBarView: View {
                         .foregroundColor(.white.opacity(0.72))
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    // Reserve the row the follow-up chips are overlaid into. Same trick as
+                    // the horizontal spacer above: the chips can't live inside this Button
+                    // (nested buttons don't hit-test), so they're overlaid and the body
+                    // just has to leave them room.
+                    if !followUpChips(notification).isEmpty {
+                        Color.clear.frame(height: 22)
+                    }
                 }
 
                 Spacer(minLength: 0)
 
                 // Reserve space so text never runs under the overlaid action buttons.
-                // Wider for actionable (task) notifications that also show Execute.
+                // Wider for actionable notifications that also show Execute (tasks)
+                // or Copy + Execute (copilot suggestions).
                 Color.clear
-                    .frame(width: notification.assistantId == "task" ? 90 : 36, height: 18)
+                    .frame(width: notificationActionSpacerWidth(notification), height: 18)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 12)
@@ -867,6 +953,13 @@ struct FloatingControlBarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .overlay(alignment: .bottomLeading) {
+            // Sits in its own overlay for the same reason the action buttons do: a Button
+            // nested inside the card's Button label would not receive clicks.
+            followUpChipRow(notification)
+                .padding(.leading, 56)  // clears the 34pt icon + its 10pt gap + 12pt padding
+                .padding(.bottom, 12)
+        }
         .overlay(alignment: .topTrailing) {
             HStack(spacing: 6) {
                 // Execute is only meaningful for actionable notifications (tasks).
@@ -904,7 +997,203 @@ struct FloatingControlBarView: View {
                     .help("Spawn an agent to handle this")
                 }
 
+                // Copilot suggestion cards: copy the talk track (or the suggestion
+                // itself) so the user can paste it mid-conversation, or hand the
+                // suggestion to an agent to act on.
+                if notification.assistantId == "copilot" {
+                    // Insert types the line straight back into the app the user was in when
+                    // the suggestion was generated, so a talk track doesn't need a manual
+                    // copy-switch-paste. Hidden when no target was captured — omi itself was
+                    // frontmost, or that app had no editable field focused.
+                    if let targetPID = notification.context?.targetPID {
+                        Button {
+                            let text = notification.context?.detail ?? notification.message
+                            CopilotFeedbackTuner.shared.record(
+                                notificationId: notification.id,
+                                bucket: notification.context?.feedbackBucket, outcome: .accepted)
+                            CopilotCorrectionLog.shared.recordCardOutcome(
+                                notificationId: notification.id,
+                                bucket: notification.context?.feedbackBucket,
+                                situation: notification.context?.contextSummary ?? notification.message,
+                                accepted: true)
+                            FloatingControlBarManager.shared.dismissCurrentNotification()
+                            Task { @MainActor in
+                                await TextInsertion.insertIntoTarget(text, pid: targetPID)
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "text.insert")
+                                    .font(.system(size: 9, weight: .bold))
+                                Text("Insert")
+                                    .scaledFont(size: 10, weight: .semibold)
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.white.opacity(0.18))
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Type this into \(Self.appName(for: targetPID))")
+                    }
+
+                    Button {
+                        let textToCopy = notification.context?.detail ?? notification.message
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(textToCopy, forType: .string)
+                        CopilotFeedbackTuner.shared.record(
+                            notificationId: notification.id,
+                            bucket: notification.context?.feedbackBucket, outcome: .accepted)
+                        CopilotCorrectionLog.shared.recordCardOutcome(
+                            notificationId: notification.id,
+                            bucket: notification.context?.feedbackBucket,
+                            situation: notification.context?.contextSummary ?? notification.message,
+                            accepted: true)
+                        FloatingControlBarManager.shared.dismissCurrentNotification()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 9, weight: .bold))
+                            Text("Copy")
+                                .scaledFont(size: 10, weight: .semibold)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.18))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Copy the suggestion to the clipboard")
+
+                    Button {
+                        let model = ShortcutSettings.shared.selectedModel.isEmpty
+                            ? ModelQoS.Claude.defaultSelection
+                            : ShortcutSettings.shared.selectedModel
+                        var details = notification.message
+                        if let detail = notification.context?.detail, !detail.isEmpty {
+                            details += "\nDetails: \(detail)"
+                        }
+                        let query = ProactiveTaskExecute.buildQuery(
+                            title: notification.title,
+                            message: details
+                        )
+                        _ = AgentPillsManager.shared.spawn(
+                            query: query,
+                            model: model,
+                            systemPromptSuffix: ProactiveTaskExecute.systemPromptSuffix
+                        )
+                        CopilotFeedbackTuner.shared.record(
+                            notificationId: notification.id,
+                            bucket: notification.context?.feedbackBucket, outcome: .accepted)
+                        CopilotCorrectionLog.shared.recordCardOutcome(
+                            notificationId: notification.id,
+                            bucket: notification.context?.feedbackBucket,
+                            situation: notification.context?.contextSummary ?? notification.message,
+                            accepted: true)
+                        FloatingControlBarManager.shared.dismissCurrentNotification()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 9, weight: .bold))
+                            Text("Execute")
+                                .scaledFont(size: 10, weight: .semibold)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.18))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Spawn an agent to act on this suggestion")
+                }
+
+                // Meeting-detected offer: one click starts transcription (which brings up
+                // the live copilot, session summary, and calendar scenario selection).
+                if notification.assistantId == "copilot_meeting" {
+                    Button {
+                        AssistantSettings.shared.transcriptionEnabled = true
+                        NotificationCenter.default.post(
+                            name: .toggleTranscriptionRequested, object: nil,
+                            userInfo: ["enabled": true])
+                        CopilotFeedbackTuner.shared.record(
+                            notificationId: notification.id,
+                            bucket: notification.context?.feedbackBucket, outcome: .accepted)
+                        PostHogManager.shared.track("copilot_meeting_prompt_accepted", properties: [:])
+                        FloatingControlBarManager.shared.dismissCurrentNotification()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "waveform.badge.mic")
+                                .font(.system(size: 9, weight: .bold))
+                            Text("Start")
+                                .scaledFont(size: 10, weight: .semibold)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.18))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Start recording with the live copilot")
+                }
+
+                // Watcher approval: the watcher drafted something that leaves this Mac and is
+                // suspended until the user decides. Dismissing denies it — nothing is sent
+                // unless the user presses Send.
+                if notification.assistantId == "watcher_approval" {
+                    Button {
+                        if let itemId = notification.context?.contextSummary {
+                            _ = WatcherApprovalStore.shared.resolve(id: itemId, resolution: "allow")
+                        }
+                        FloatingControlBarManager.shared.dismissCurrentNotification()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "paperplane.fill")
+                                .font(.system(size: 9, weight: .bold))
+                            Text("Send")
+                                .scaledFont(size: 10, weight: .semibold)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.18))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help(notification.context?.reasoning ?? "Send this message")
+
+                    // Only offered when the action names an exact target — the grant binds to
+                    // that target alone, never to the channel as a whole.
+                    if let grant = notification.context?.currentActivity, !grant.isEmpty {
+                        Button {
+                            if let itemId = notification.context?.contextSummary {
+                                _ = WatcherApprovalStore.shared.resolve(id: itemId, resolution: "always")
+                            }
+                            FloatingControlBarManager.shared.dismissCurrentNotification()
+                        } label: {
+                            Text("Always here")
+                                .scaledFont(size: 10, weight: .semibold)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.white.opacity(0.12))
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Allow \(WatcherPermission.describeGrant(grant)) without asking again")
+                    }
+                }
+
                 Button {
+                    // A dismissed approval is an explicit denial — resolve it so the waiting
+                    // watcher resumes instead of hanging until the timeout.
+                    if notification.assistantId == "watcher_approval",
+                        let itemId = notification.context?.contextSummary
+                    {
+                        _ = WatcherApprovalStore.shared.resolve(id: itemId, resolution: "deny")
+                    }
                     FloatingControlBarManager.shared.dismissCurrentNotification()
                 } label: {
                     Image(systemName: "xmark")

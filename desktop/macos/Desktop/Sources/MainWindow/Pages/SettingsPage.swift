@@ -157,6 +157,28 @@ struct SettingsContentView: View {
   @State var taskBrowserKeywords: [String]
   @State var isRescoringTasks = false
 
+  // Live Copilot states
+  @State var copilotLiveEnabled: Bool
+  @State var copilotScenarioId: String
+  @State var screenOpEnabled: Bool
+  @State var stealthModeEnabled: Bool
+  @State var copilotAdaptiveEnabled: Bool
+  @State var copilotAutoScenario: Bool
+  @State var showCopilotProfilesManager = false
+  @State var showDossierBrowser = false
+  @State var showCopilotPrepSheet = false
+  @State var copilotNotesRagEnabled: Bool
+  @State var copilotNotesFolderPath: String
+  @State var copilotNotesIndexStatus: String = ""
+  @State var copilotAutoDetectMeetings: Bool
+  @State var copilotExportMarkdown: Bool
+  @State var copilotMeetingPrep: Bool
+  @State var copilotStyleMatching: Bool
+  @State var copilotDossiers: Bool
+  @State var showWatchersManager = false
+  @State var screenOpOnlyOnChange: Bool
+  @State var insightOnlyOnChange: Bool
+
   // Advice Assistant states
   @State var insightEnabled: Bool
   @State var insightExtractionInterval: Double
@@ -325,6 +347,7 @@ struct SettingsContentView: View {
     case account = "Account"
     case planUsage = "Plan and Usage"
     case aiChat = "AI Chat"
+    case copilot = "Copilot"
     case floatingBar = "Floating Bar"
     case shortcuts = "Shortcuts"
     case advanced = "Advanced"
@@ -428,6 +451,21 @@ struct SettingsContentView: View {
       initialValue: TaskAssistantSettings.shared.notificationsEnabled)
     _taskAllowedApps = State(initialValue: TaskAssistantSettings.shared.allowedApps)
     _taskBrowserKeywords = State(initialValue: TaskAssistantSettings.shared.browserKeywords)
+    _copilotLiveEnabled = State(initialValue: CopilotSettings.shared.isEnabled)
+    _copilotScenarioId = State(initialValue: CopilotSettings.shared.scenarioId)
+    _screenOpEnabled = State(initialValue: ScreenOpAssistantSettings.shared.isEnabled)
+    _stealthModeEnabled = State(initialValue: ShortcutSettings.shared.stealthModeEnabled)
+    _copilotAdaptiveEnabled = State(initialValue: CopilotSettings.shared.adaptiveThresholdEnabled)
+    _copilotAutoScenario = State(initialValue: CopilotSettings.shared.autoSelectScenario)
+    _copilotNotesRagEnabled = State(initialValue: CopilotSettings.shared.notesRagEnabled)
+    _copilotNotesFolderPath = State(initialValue: CopilotSettings.shared.notesFolderPath ?? "")
+    _copilotAutoDetectMeetings = State(initialValue: CopilotSettings.shared.autoDetectMeetings)
+    _copilotExportMarkdown = State(initialValue: CopilotSettings.shared.exportMeetingMarkdown)
+    _copilotMeetingPrep = State(initialValue: CopilotSettings.shared.meetingPrepEnabled)
+    _copilotStyleMatching = State(initialValue: CopilotSettings.shared.styleMatchingEnabled)
+    _copilotDossiers = State(initialValue: CopilotSettings.shared.dossiersEnabled)
+    _screenOpOnlyOnChange = State(initialValue: ScreenOpAssistantSettings.shared.onlyOnSignificantChange)
+    _insightOnlyOnChange = State(initialValue: InsightAssistantSettings.shared.onlyOnSignificantChange)
     _insightEnabled = State(initialValue: InsightAssistantSettings.shared.isEnabled)
     _insightExtractionInterval = State(
       initialValue: InsightAssistantSettings.shared.extractionInterval)
@@ -480,6 +518,8 @@ struct SettingsContentView: View {
           planUsageSection
         case .aiChat:
           aiChatSection
+        case .copilot:
+          copilotSection
         case .floatingBar:
           floatingBarSection
         case .shortcuts:

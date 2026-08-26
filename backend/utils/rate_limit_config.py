@@ -56,6 +56,8 @@ RATE_POLICIES: dict[str, tuple[int, int]] = {
     # Platform tools — backend RAG endpoints
     "tools:search": (60, 3600),
     "tools:mutate": (60, 3600),
+    # Outbound messaging (SMS / WhatsApp / calls) — abuse-sensitive, kept tight
+    "tools:send_message": (20, 3600),
     # MCP transport POSTs (initialize/tools-list/tool-calls) are cheap reads, but
     # one user often runs many concurrent MCP clients (multiple IDE/agent sessions)
     # under a single account, and clients reconnect in bursts. A tight cap here turns

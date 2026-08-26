@@ -32,6 +32,166 @@ extension SettingsContentView {
         }
       }
 
+      settingsCard(settingId: "floatingbar.livecopilot") {
+        VStack(alignment: .leading, spacing: 16) {
+          HStack {
+            Image(systemName: "waveform.badge.mic")
+              .scaledFont(size: 16)
+              .foregroundColor(OmiColors.textTertiary)
+
+            Text("Live Copilot")
+              .scaledFont(size: 16, weight: .semibold)
+              .foregroundColor(OmiColors.textPrimary)
+
+            Spacer()
+
+            Toggle("", isOn: $copilotLiveEnabled)
+              .toggleStyle(.switch)
+              .labelsHidden()
+              .onChange(of: copilotLiveEnabled) { _, newValue in
+                CopilotSettings.shared.isEnabled = newValue
+              }
+          }
+
+          Text(
+            "Real-time suggestions (talking points, action items, answers) in the floating bar while you're recording a meeting or call."
+          )
+          .scaledFont(size: 13)
+          .foregroundColor(OmiColors.textSecondary)
+
+          if copilotLiveEnabled {
+            HStack {
+              Text("Scenario")
+                .scaledFont(size: 14)
+                .foregroundColor(OmiColors.textPrimary)
+
+              Spacer()
+
+              Picker("", selection: $copilotScenarioId) {
+                ForEach(CopilotSettings.shared.availableScenarios) { profile in
+                  Text(profile.displayName).tag(profile.id)
+                }
+              }
+              .pickerStyle(.menu)
+              .frame(width: 200)
+              .onChange(of: copilotScenarioId) { _, newValue in
+                CopilotSettings.shared.scenarioId = newValue
+              }
+
+              Button("Manage") { showCopilotProfilesManager = true }
+                .buttonStyle(.plain)
+                .scaledFont(size: 12)
+                .foregroundColor(OmiColors.textSecondary)
+            }
+
+            HStack {
+              VStack(alignment: .leading, spacing: 2) {
+                Text("Auto-pick scenario from calendar")
+                  .scaledFont(size: 14)
+                  .foregroundColor(OmiColors.textPrimary)
+                Text("Uses your current calendar event to choose the profile when a session starts")
+                  .scaledFont(size: 12)
+                  .foregroundColor(OmiColors.textTertiary)
+              }
+
+              Spacer()
+
+              Toggle("", isOn: $copilotAutoScenario)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .onChange(of: copilotAutoScenario) { _, newValue in
+                  CopilotSettings.shared.autoSelectScenario = newValue
+                }
+            }
+
+            HStack {
+              VStack(alignment: .leading, spacing: 2) {
+                Text("Learn from my feedback")
+                  .scaledFont(size: 14)
+                  .foregroundColor(OmiColors.textPrimary)
+                Text("Suggestion types you dismiss get quieter; ones you act on come more readily")
+                  .scaledFont(size: 12)
+                  .foregroundColor(OmiColors.textTertiary)
+              }
+
+              Spacer()
+
+              Toggle("", isOn: $copilotAdaptiveEnabled)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .onChange(of: copilotAdaptiveEnabled) { _, newValue in
+                  CopilotSettings.shared.adaptiveThresholdEnabled = newValue
+                }
+            }
+
+            if copilotAdaptiveEnabled && !CopilotFeedbackTuner.shared.adaptationSummary().isEmpty {
+              VStack(alignment: .leading, spacing: 4) {
+                ForEach(CopilotFeedbackTuner.shared.adaptationSummary(), id: \.bucket) { item in
+                  Text("· \(item.bucket): \(item.direction)")
+                    .scaledFont(size: 11)
+                    .foregroundColor(OmiColors.textTertiary)
+                }
+                Button("Reset learning") {
+                  CopilotFeedbackTuner.shared.reset()
+                }
+                .scaledFont(size: 12)
+                .buttonStyle(.plain)
+                .foregroundColor(OmiColors.textSecondary)
+              }
+            }
+          }
+
+          Divider()
+            .background(OmiColors.backgroundQuaternary)
+
+          HStack {
+            VStack(alignment: .leading, spacing: 2) {
+              Text("Screen help while you work")
+                .scaledFont(size: 14)
+                .foregroundColor(OmiColors.textPrimary)
+              Text("Suggests a fix when you look stuck (repeating errors, no progress)")
+                .scaledFont(size: 12)
+                .foregroundColor(OmiColors.textTertiary)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: $screenOpEnabled)
+              .toggleStyle(.switch)
+              .labelsHidden()
+              .onChange(of: screenOpEnabled) { _, newValue in
+                ScreenOpAssistantSettings.shared.isEnabled = newValue
+              }
+          }
+
+          Divider()
+            .background(OmiColors.backgroundQuaternary)
+
+          HStack {
+            VStack(alignment: .leading, spacing: 2) {
+              Text("Hide from screen recordings & shares")
+                .scaledFont(size: 14)
+                .foregroundColor(OmiColors.textPrimary)
+              Text("The copilot stays visible to you but never appears on a shared screen or recording")
+                .scaledFont(size: 12)
+                .foregroundColor(OmiColors.textTertiary)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: $stealthModeEnabled)
+              .toggleStyle(.switch)
+              .labelsHidden()
+              .onChange(of: stealthModeEnabled) { _, newValue in
+                ShortcutSettings.shared.stealthModeEnabled = newValue
+              }
+          }
+        }
+        .sheet(isPresented: $showCopilotProfilesManager) {
+          CopilotProfilesManagerView { showCopilotProfilesManager = false }
+        }
+      }
+
       settingsCard(settingId: "floatingbar.background") {
         VStack(alignment: .leading, spacing: 16) {
           Text("Background Style")

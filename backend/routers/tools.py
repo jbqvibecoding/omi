@@ -24,6 +24,10 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field, field_validator
 
 import database.vector_db as vector_db
+from utils import twilio_service
+from utils.executors import db_executor, run_blocking
+from utils.log_sanitizer import sanitize
+from utils.phone_calls import countries_from_e164
 from utils.other.endpoints import get_current_user_uid, with_rate_limit
 from utils.conversations.transcript_chunks import hydrate_chunk_texts
 from utils.retrieval.tool_services.conversations import get_conversations_text, search_conversations_text
@@ -259,6 +263,83 @@ def update_action_item(
 
 
 # --------------- calendar endpoints ---------------
+
+
+# --------------- outbound messaging (Twilio) ---------------
+
+
+def _redact_phone(number: str) -> str:
+    """Show only the last 4 digits of a phone number in logs."""
+    digits = ''.join(c for c in number if c.isdigit())
+    return f"***{digits[-4:]}" if len(digits) >= 4 else "***"
+
+
+def _validate_destination(to: str) -> Optional[str]:
+    """Returns an error string if the destination is not an allowed E.164 number, else None."""
+    if not to.startswith('+') or not to[1:].isdigit() or not (8 <= len(to) <= 16):
+        return "Error: destination must be an E.164 phone number, e.g. +14155552671"
+    # Fail-safe: an unrecognized country prefix is blocked.
+    if not countries_from_e164(to):
+        return "Error: destination country is not supported"
+    return None
+
+
+class SendSmsRequest(BaseModel):
+    to: str = Field(description="E.164 destination phone number, e.g. +14155552671")
+    body: str = Field(description="Message text", max_length=1000)
+
+
+class CallRequest(BaseModel):
+    to: str = Field(description="E.164 destination phone number")
+    message: str = Field(description="Text spoken to the recipient via TTS", max_length=1000)
+
+
+@router.post("/v1/tools/send-sms", response_model=ToolResponse)
+async def send_sms_endpoint(
+    body: SendSmsRequest,
+    uid: str = Depends(with_rate_limit(get_current_user_uid, "tools:send_message")),
+):
+    if err := _validate_destination(body.to):
+        return {"tool_name": "send_sms", "result_text": err, "is_error": True}
+    try:
+        sid = await run_blocking(db_executor, twilio_service.send_sms, body.to, body.body)
+        logger.info(f"send_sms uid={uid} to={_redact_phone(body.to)} sid={sid}")
+        return _ok("send_sms", f"Sent SMS to {_redact_phone(body.to)}")
+    except Exception as e:
+        logger.error(f"send_sms failed uid={uid} to={_redact_phone(body.to)}: {sanitize(str(e))}")
+        return {"tool_name": "send_sms", "result_text": f"Error: {sanitize(str(e))}", "is_error": True}
+
+
+@router.post("/v1/tools/send-whatsapp", response_model=ToolResponse)
+async def send_whatsapp_endpoint(
+    body: SendSmsRequest,
+    uid: str = Depends(with_rate_limit(get_current_user_uid, "tools:send_message")),
+):
+    if err := _validate_destination(body.to):
+        return {"tool_name": "send_whatsapp", "result_text": err, "is_error": True}
+    try:
+        sid = await run_blocking(db_executor, twilio_service.send_whatsapp, body.to, body.body)
+        logger.info(f"send_whatsapp uid={uid} to={_redact_phone(body.to)} sid={sid}")
+        return _ok("send_whatsapp", f"Sent WhatsApp to {_redact_phone(body.to)}")
+    except Exception as e:
+        logger.error(f"send_whatsapp failed uid={uid} to={_redact_phone(body.to)}: {sanitize(str(e))}")
+        return {"tool_name": "send_whatsapp", "result_text": f"Error: {sanitize(str(e))}", "is_error": True}
+
+
+@router.post("/v1/tools/call", response_model=ToolResponse)
+async def call_endpoint(
+    body: CallRequest,
+    uid: str = Depends(with_rate_limit(get_current_user_uid, "tools:send_message")),
+):
+    if err := _validate_destination(body.to):
+        return {"tool_name": "call", "result_text": err, "is_error": True}
+    try:
+        sid = await run_blocking(db_executor, twilio_service.start_tts_call, body.to, body.message)
+        logger.info(f"call uid={uid} to={_redact_phone(body.to)} sid={sid}")
+        return _ok("call", f"Calling {_redact_phone(body.to)}")
+    except Exception as e:
+        logger.error(f"call failed uid={uid} to={_redact_phone(body.to)}: {sanitize(str(e))}")
+        return {"tool_name": "call", "result_text": f"Error: {sanitize(str(e))}", "is_error": True}
 
 
 @router.post("/v1/tools/calendar-events", response_model=ToolResponse)

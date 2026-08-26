@@ -2318,6 +2318,22 @@ actor RewindDatabase {
             try db.execute(sql: "ALTER TABLE task_chat_messages ADD COLUMN resourcesJson TEXT")
         }
 
+        // Migration: Notes knowledge-base chunks (copilot notes RAG — embedded content
+        // of the user's notes folder, keyed by "relativePath:sha256" for incremental re-indexing)
+        migrator.registerMigration("createNotesKBChunks") { db in
+            try db.create(table: "notes_kb_chunks") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("cacheKey", .text).notNull().indexed()
+                t.column("relativePath", .text).notNull()
+                t.column("headerContext", .text).notNull()
+                t.column("documentTitle", .text).notNull()
+                t.column("chunkIndex", .integer).notNull()
+                t.column("chunkText", .text).notNull()
+                t.column("embedding", .blob).notNull()
+                t.column("indexedAt", .datetime).notNull()
+            }
+        }
+
         try migrator.migrate(queue)
     }
 

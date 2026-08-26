@@ -21,6 +21,10 @@ public class ProactiveAssistantsPlugin: NSObject {
     private var taskAssistant: TaskAssistant?
     private var insightAssistant: InsightAssistant?
     private var memoryAssistant: MemoryAssistant?
+    private var screenOpAssistant: ScreenOpAssistant?
+
+    /// Public read-only accessor for the screen-op test action
+    var currentScreenOpAssistant: ScreenOpAssistant? { screenOpAssistant }
     private var captureTimer: Timer?
     private var analysisDelayTimer: Timer?
     private var isInDelayPeriod = false
@@ -346,6 +350,12 @@ public class ProactiveAssistantsPlugin: NSObject {
 
             if let memory = memoryAssistant {
                 AssistantCoordinator.shared.register(memory)
+            }
+
+            screenOpAssistant = try ScreenOpAssistant()
+
+            if let screenOp = screenOpAssistant {
+                AssistantCoordinator.shared.register(screenOp)
             }
 
         } catch {

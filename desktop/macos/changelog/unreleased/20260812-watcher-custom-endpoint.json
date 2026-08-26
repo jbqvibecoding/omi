@@ -1,0 +1,3 @@
+{
+  "change": "Watchers can now run on any model you can reach — paste the curl command from your provider's docs, mark where the question goes, and omi sends it"
+}

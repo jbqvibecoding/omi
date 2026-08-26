@@ -230,9 +230,16 @@ struct AIResponseView: View {
     /// overlay view instance (and its Button action closures) across different
     /// messages in the same structural slot, which caused clicking Copy on an
     /// older message to read the current message's text.
-    private func messageWithHoverActions(message: ChatMessage) -> some View {
+    ///
+    /// `insertTargetPID` is only passed for the *current* message: it names the app the
+    /// user was in when they asked, and a scrolled-back answer from an earlier question no
+    /// longer has a meaningful destination.
+    private func messageWithHoverActions(
+        message: ChatMessage, insertTargetPID: pid_t? = nil
+    ) -> some View {
         MessageHoverOverlay(
             message: message,
+            insertTargetPID: insertTargetPID,
             onRate: { [id = message.id] rating in
                 onRate?(id, rating)
             }
@@ -350,7 +357,8 @@ struct AIResponseView: View {
                         }
                     } else {
                         // After streaming completes, show with hover actions
-                        messageWithHoverActions(message: message)
+                        messageWithHoverActions(
+                            message: message, insertTargetPID: state.insertTargetPID)
                     }
                 }
                 .padding(.horizontal, 4)
@@ -514,12 +522,16 @@ struct AIResponseView: View {
 /// Overlay that shows action buttons (thumbs up/down, copy, info) on hover over an AI message
 struct MessageHoverOverlay<Content: View>: View {
     let message: ChatMessage
+    /// The app to type this answer back into, when one was captured (Copilot Snap). nil
+    /// hides the Insert button — for a typed question there is no "back where I was".
+    var insertTargetPID: pid_t? = nil
     let onRate: (Int?) -> Void
     @ViewBuilder let content: () -> Content
 
     @State private var isHovered = false
     @State private var isBarHovered = false
     @State private var showCopied = false
+    @State private var showInserted = false
     @State private var showInfoPopover = false
     @State private var hideWorkItem: DispatchWorkItem?
     @State private var showRatingFeedback = false
@@ -616,6 +628,21 @@ struct MessageHoverOverlay<Content: View>: View {
                     .buttonStyle(.plain)
                     .help("Copy response")
 
+                    // Insert — types the answer straight back into the app the shortcut
+                    // was pressed in, so a snapped formula or translation doesn't need a
+                    // manual copy-switch-paste round trip.
+                    if let insertTargetPID {
+                        Button(action: { [messageText] in
+                            insertText(messageText, pid: insertTargetPID)
+                        }) {
+                            Image(systemName: showInserted ? "checkmark" : "text.insert")
+                                .scaledFont(size: 11)
+                                .foregroundColor(showInserted ? .green : .secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Insert into the app you were in")
+                    }
+
                     // Info (developer context)
                     if message.metadata != nil {
                         Button(action: { showInfoPopover.toggle() }) {
@@ -662,6 +689,21 @@ struct MessageHoverOverlay<Content: View>: View {
     /// Callers must pass the captured text from the closure's capture list so
     /// clicking Copy on a historical message writes the correct content to the
     /// pasteboard even when SwiftUI has reused the overlay view across renders.
+    /// Same capture discipline as ``copyText(_:)``: the caller passes the text this button
+    /// was drawn for, never `self.message.text`.
+    private func insertText(_ text: String, pid: pid_t) {
+        guard !text.isEmpty else { return }
+        Task { @MainActor in
+            let inserted = await TextInsertion.insertIntoTarget(text, pid: pid)
+            guard inserted else { return }
+            AnalyticsManager.shared.shareAction(category: "floating_bar_response_insert")
+            withAnimation { showInserted = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                withAnimation { showInserted = false }
+            }
+        }
+    }
+
     private func copyText(_ text: String) {
         guard !text.isEmpty else { return }
         NSPasteboard.general.clearContents()

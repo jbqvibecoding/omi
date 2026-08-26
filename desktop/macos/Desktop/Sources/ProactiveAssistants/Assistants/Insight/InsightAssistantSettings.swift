@@ -13,6 +13,7 @@ class InsightAssistantSettings {
     private let minConfidenceKey = "adviceMinConfidence"
     private let notificationsEnabledKey = "adviceNotificationsEnabled"
     private let excludedAppsKey = "adviceExcludedApps"
+    private let onlyOnSignificantChangeKey = "adviceOnlyOnSignificantChange"
 
     // MARK: - Default Values
 
@@ -95,6 +96,7 @@ class InsightAssistantSettings {
             extractionIntervalKey: defaultExtractionInterval,
             minConfidenceKey: defaultMinConfidence,
             notificationsEnabledKey: defaultNotificationsEnabled,
+            onlyOnSignificantChangeKey: true,
         ])
         migratePromptIfNeeded()
     }
@@ -166,6 +168,16 @@ class InsightAssistantSettings {
         get { UserDefaults.standard.bool(forKey: notificationsEnabledKey) }
         set {
             UserDefaults.standard.set(newValue, forKey: notificationsEnabledKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Skip the analysis when the screen hasn't meaningfully changed since the last one
+    /// (perceptual-hash gate) — saves LLM calls while idle.
+    var onlyOnSignificantChange: Bool {
+        get { UserDefaults.standard.bool(forKey: onlyOnSignificantChangeKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: onlyOnSignificantChangeKey)
             NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
         }
     }

@@ -549,8 +549,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // Register global hotkey for Rewind (Cmd+Shift+Space)
     setupGlobalHotkeys()
 
-    // Register Carbon-based global shortcuts for floating control bar (Ask Omi)
+    // Register Carbon-based global shortcuts for floating control bar (Ask Omi, Copilot Snap)
     GlobalShortcutManager.shared.registerShortcuts()
+
+    // Register the copilot_snap automation action for headless testing via omi-ctl
+    Task { @MainActor in
+      CopilotOrchestrator.shared.setup()
+    }
 
     // Ensure app always shows in dock as a regular app
     NSApp.setActivationPolicy(.regular)

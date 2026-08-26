@@ -65,8 +65,11 @@ extension AppState {
       if useLocalSTT {
         log("Transcription: ON-DEVICE Parakeet mode (OMI_LOCAL_STT) — no cloud STT")
         // Segments are delivered on the main actor by the service, so no Task hop here.
+        // Echo filter: without cancellation, the mic re-captures the other party's voice
+        // from the speakers — drop mic segments that echo recent system audio.
+        AcousticEchoFilter.shared.reset()
         let onLocalSegments: LocalTranscriptionService.SegmentsHandler = { [weak self] segments in
-          self?.handleBackendSegments(segments)
+          self?.handleBackendSegments(AcousticEchoFilter.shared.filter(segments))
         }
         // If the on-device model can't load, fall back to cloud STT instead of recording
         // into a void (the failure is otherwise silent — a blank transcript).
@@ -209,6 +212,10 @@ extension AppState {
             self.currentSessionId = sessionId
             // Start live notes session
             LiveNotesMonitor.shared.startSession(sessionId: sessionId)
+            // Start live copilot suggestions session
+            LiveSuggestionsMonitor.shared.startSession(sessionId: sessionId)
+            // Start structured session summary
+            SessionSummaryMonitor.shared.startSession(sessionId: sessionId)
           }
           if let backendId = await MainActor.run(body: { () -> String? in
             let candidate = self.pendingBackendConversationId ?? self.currentBackendConversationId
@@ -854,6 +861,8 @@ extension AppState {
     LiveTranscriptMonitor.shared.clear()
     LiveNotesMonitor.shared.endSession()
     LiveNotesMonitor.shared.clear()
+    LiveSuggestionsMonitor.shared.endSession()
+    SessionSummaryMonitor.shared.endSession()
 
     // Reset the recording start time and backend binding for the next conversation.
     // If the new WebSocket fast-reconnects before the backend finalizes the prior
@@ -927,8 +936,9 @@ extension AppState {
         // On-device mode: re-arm fresh local Parakeet instances (mic + system) for the next
         // conversation — do NOT reconnect the cloud WebSocket. Stopping the old ones flushes
         // their final tails; the source-routed capture callbacks feed the new instances.
+        AcousticEchoFilter.shared.reset()
         let onLocalSegments: LocalTranscriptionService.SegmentsHandler = { [weak self] segments in
-          self?.handleBackendSegments(segments)
+          self?.handleBackendSegments(AcousticEchoFilter.shared.filter(segments))
         }
         let mic = LocalTranscriptionService(language: effectiveLanguage, isUser: true)
         mic.start(onSegments: onLocalSegments)
@@ -987,6 +997,8 @@ extension AppState {
         await MainActor.run {
           self.currentSessionId = sessionId
           LiveNotesMonitor.shared.startSession(sessionId: sessionId)
+          LiveSuggestionsMonitor.shared.startSession(sessionId: sessionId)
+          SessionSummaryMonitor.shared.startSession(sessionId: sessionId)
         }
         if let backendId = await MainActor.run(body: { () -> String? in
           let candidate = self.pendingBackendConversationId ?? self.currentBackendConversationId
@@ -1087,6 +1099,8 @@ extension AppState {
 
     // End live notes session
     LiveNotesMonitor.shared.endSession()
+    LiveSuggestionsMonitor.shared.endSession()
+    SessionSummaryMonitor.shared.endSession()
 
     // Mark DB session as finished (pending upload / crash recovery)
     if finishSession, let sessionId = currentSessionId {

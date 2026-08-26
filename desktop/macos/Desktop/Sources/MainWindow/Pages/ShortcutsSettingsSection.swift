@@ -13,12 +13,14 @@ struct ShortcutsSettingsSection: View {
 
   private enum ShortcutTarget {
     case askOmi
+    case copilot
     case pushToTalk
   }
 
   var body: some View {
     VStack(spacing: 20) {
       askOmiKeyCard
+      copilotKeyCard
       pttKeyCard
       doubleTapCard
       pttSoundsCard
@@ -85,6 +87,68 @@ struct ShortcutsSettingsSection: View {
       stopShortcutCapture()
       settings.askOmiEnabled = true
       settings.askOmiShortcut = shortcut
+    } label: {
+      shortcutSelectionLabel(tokens: shortcut.displayTokens, isSelected: isSelected)
+    }
+    .buttonStyle(.plain)
+  }
+
+  private var copilotKeyCard: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      VStack(alignment: .leading, spacing: 4) {
+        Text("Copilot Snap")
+          .scaledFont(size: 16, weight: .semibold)
+          .foregroundColor(OmiColors.textPrimary)
+        Text("Snapshot your screen and get an instant AI answer — no question needed.")
+          .scaledFont(size: 13)
+          .foregroundColor(OmiColors.textSecondary)
+      }
+
+      HStack(spacing: 12) {
+        ForEach(ShortcutSettings.copilotPresets, id: \.self) { shortcut in
+          copilotKeyButton(shortcut)
+        }
+        customShortcutButton(
+          for: .copilot, isSelected: settings.copilotEnabled && settings.copilotUsesCustomShortcut)
+        disableShortcutButton(isDisabled: !settings.copilotEnabled) {
+          stopShortcutCapture()
+          settings.copilotEnabled = false
+        }
+        Spacer()
+      }
+
+      if settings.copilotEnabled
+        && (recordingTarget == .copilot || settings.copilotUsesCustomShortcut
+          || (captureError != nil && recordingTarget == .copilot))
+      {
+        shortcutRecorderCard(
+          title: recordingTarget == .copilot
+            ? "Press your custom Copilot Snap shortcut now" : "Custom Copilot Snap shortcut",
+          shortcut: settings.copilotShortcut,
+          isRecording: recordingTarget == .copilot,
+          action: { startShortcutCapture(.copilot) },
+          helperText: "Use at least one non-modifier key."
+        )
+      }
+    }
+    .padding(20)
+    .background(
+      RoundedRectangle(cornerRadius: 12)
+        .fill(OmiColors.backgroundTertiary.opacity(0.5))
+    )
+    .modifier(
+      SettingHighlightModifier(
+        settingId: "floatingbar.copilot", highlightedSettingId: $highlightedSettingId))
+  }
+
+  private func copilotKeyButton(_ shortcut: ShortcutSettings.KeyboardShortcut) -> some View {
+    let isSelected =
+      settings.copilotEnabled && settings.copilotShortcut == shortcut
+      && !settings.copilotUsesCustomShortcut
+    return Button {
+      stopShortcutCapture()
+      settings.copilotEnabled = true
+      settings.copilotShortcut = shortcut
     } label: {
       shortcutSelectionLabel(tokens: shortcut.displayTokens, isSelected: isSelected)
     }
@@ -250,6 +314,20 @@ struct ShortcutsSettingsSection: View {
         shortcutRow(
           label: "Locked listening", keys: settings.pttShortcut.displayLabel + " \u{00D7}2")
       }
+
+      // The copilot shortcuts have no editor of their own yet, so this card is the only
+      // place they're discoverable. Grouped to stay inside ViewBuilder's ten-child limit.
+      Group {
+        shortcutRow(
+          label: "Quick reply",
+          keys: settings.quickReplyEnabled ? settings.quickReplyShortcut.displayLabel : "Disabled")
+        shortcutRow(
+          label: "Snap a region",
+          keys: settings.snapRegionEnabled ? settings.snapRegionShortcut.displayLabel : "Disabled")
+        shortcutRow(
+          label: "Suggest now",
+          keys: settings.suggestNowEnabled ? settings.suggestNowShortcut.displayLabel : "Disabled")
+      }
     }
     .padding(20)
     .background(
@@ -279,6 +357,8 @@ struct ShortcutsSettingsSection: View {
       switch target {
       case .askOmi:
         settings.askOmiEnabled = true
+      case .copilot:
+        settings.copilotEnabled = true
       case .pushToTalk:
         settings.pttEnabled = true
       }
@@ -449,6 +529,19 @@ struct ShortcutsSettingsSection: View {
       }
       settings.askOmiEnabled = true
       settings.askOmiShortcut = shortcut
+    case .copilot:
+      if event.type == .flagsChanged {
+        captureError = "Copilot Snap needs a non-modifier key."
+        return true
+      }
+      guard
+        let shortcut = ShortcutSettings.KeyboardShortcut.fromRecordingEvent(
+          event, allowModifierOnly: false)
+      else {
+        return false
+      }
+      settings.copilotEnabled = true
+      settings.copilotShortcut = shortcut
     case .pushToTalk:
       guard
         let shortcut = ShortcutSettings.KeyboardShortcut.fromRecordingEvent(

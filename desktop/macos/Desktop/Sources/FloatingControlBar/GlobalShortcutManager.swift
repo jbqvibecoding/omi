@@ -14,9 +14,19 @@ class GlobalShortcutManager {
 
     private enum HotKeyID: UInt32 {
         case askOmi = 2
+        case copilot = 3
+        case clickThrough = 4
+        case suggestNow = 5
+        case snapRegion = 6
+        case quickReply = 7
     }
 
     private var shortcutObserver: NSObjectProtocol?
+    private var copilotShortcutObserver: NSObjectProtocol?
+    private var clickThroughShortcutObserver: NSObjectProtocol?
+    private var suggestNowShortcutObserver: NSObjectProtocol?
+    private var snapRegionShortcutObserver: NSObjectProtocol?
+    private var quickReplyShortcutObserver: NSObjectProtocol?
 
     private init() {
         var eventType = EventTypeSpec(
@@ -39,6 +49,51 @@ class GlobalShortcutManager {
         ) { [weak self] _ in
             self?.registerAskOmi()
         }
+
+        // Re-register Copilot Snap shortcut when user changes it in settings
+        copilotShortcutObserver = NotificationCenter.default.addObserver(
+            forName: ShortcutSettings.copilotShortcutChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.registerCopilot()
+        }
+
+        // Re-register the region-snap shortcut when user changes it in settings
+        snapRegionShortcutObserver = NotificationCenter.default.addObserver(
+            forName: ShortcutSettings.snapRegionShortcutChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.registerSnapRegion()
+        }
+
+        // Re-register the quick-reply shortcut when user changes it in settings
+        quickReplyShortcutObserver = NotificationCenter.default.addObserver(
+            forName: ShortcutSettings.quickReplyShortcutChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.registerQuickReply()
+        }
+
+        // Re-register the suggest-now shortcut when user changes it in settings
+        suggestNowShortcutObserver = NotificationCenter.default.addObserver(
+            forName: ShortcutSettings.suggestNowShortcutChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.registerSuggestNow()
+        }
+
+        // Re-register click-through shortcut when user changes it in settings
+        clickThroughShortcutObserver = NotificationCenter.default.addObserver(
+            forName: ShortcutSettings.clickThroughShortcutChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.registerClickThrough()
+        }
     }
 
     func registerShortcuts() {
@@ -46,6 +101,16 @@ class GlobalShortcutManager {
         guard !isRegistrationSuspended else { return }
         // Register Ask Omi shortcut from user settings
         registerAskOmi()
+        // Register Copilot Snap shortcut from user settings
+        registerCopilot()
+        // Register click-through toggle shortcut from user settings
+        registerClickThrough()
+        // Register the "ask for a suggestion now" shortcut from user settings
+        registerSuggestNow()
+        // Register the region-snap shortcut from user settings
+        registerSnapRegion()
+        // Register the quick-reply shortcut from user settings
+        registerQuickReply()
     }
 
     func setRegistrationSuspended(_ suspended: Bool) {
@@ -76,6 +141,107 @@ class GlobalShortcutManager {
         }
         registerHotKey(keyCode: Int(keyCode), modifiers: askOmiShortcut.carbonModifiers, id: .askOmi)
         NSLog("GlobalShortcutManager: Registered Ask Omi shortcut: \(askOmiShortcut.displayLabel)")
+    }
+
+    private func registerCopilot() {
+        guard !isRegistrationSuspended else { return }
+        // Unregister previous Copilot hotkey if any
+        if let ref = hotKeyRefs.removeValue(forKey: .copilot) {
+            UnregisterEventHotKey(ref)
+        }
+        let (copilotEnabled, copilotShortcut) = MainActor.assumeIsolated {
+            (ShortcutSettings.shared.copilotEnabled, ShortcutSettings.shared.copilotShortcut)
+        }
+        guard copilotEnabled else {
+            NSLog("GlobalShortcutManager: Copilot Snap shortcut is disabled")
+            return
+        }
+        guard copilotShortcut.supportsGlobalHotKey, let keyCode = copilotShortcut.keyCode else {
+            NSLog("GlobalShortcutManager: Copilot Snap shortcut is not a registerable hotkey")
+            return
+        }
+        registerHotKey(keyCode: Int(keyCode), modifiers: copilotShortcut.carbonModifiers, id: .copilot)
+        NSLog("GlobalShortcutManager: Registered Copilot Snap shortcut: \(copilotShortcut.displayLabel)")
+    }
+
+    private func registerSnapRegion() {
+        guard !isRegistrationSuspended else { return }
+        if let ref = hotKeyRefs.removeValue(forKey: .snapRegion) {
+            UnregisterEventHotKey(ref)
+        }
+        let (enabled, shortcut) = MainActor.assumeIsolated {
+            (ShortcutSettings.shared.snapRegionEnabled, ShortcutSettings.shared.snapRegionShortcut)
+        }
+        guard enabled else {
+            NSLog("GlobalShortcutManager: Region-snap shortcut is disabled")
+            return
+        }
+        guard shortcut.supportsGlobalHotKey, let keyCode = shortcut.keyCode else {
+            NSLog("GlobalShortcutManager: Region-snap shortcut is not a registerable hotkey")
+            return
+        }
+        registerHotKey(keyCode: Int(keyCode), modifiers: shortcut.carbonModifiers, id: .snapRegion)
+        NSLog("GlobalShortcutManager: Registered region-snap shortcut: \(shortcut.displayLabel)")
+    }
+
+    private func registerQuickReply() {
+        guard !isRegistrationSuspended else { return }
+        if let ref = hotKeyRefs.removeValue(forKey: .quickReply) {
+            UnregisterEventHotKey(ref)
+        }
+        let (enabled, shortcut) = MainActor.assumeIsolated {
+            (ShortcutSettings.shared.quickReplyEnabled, ShortcutSettings.shared.quickReplyShortcut)
+        }
+        guard enabled else {
+            NSLog("GlobalShortcutManager: Quick-reply shortcut is disabled")
+            return
+        }
+        guard shortcut.supportsGlobalHotKey, let keyCode = shortcut.keyCode else {
+            NSLog("GlobalShortcutManager: Quick-reply shortcut is not a registerable hotkey")
+            return
+        }
+        registerHotKey(keyCode: Int(keyCode), modifiers: shortcut.carbonModifiers, id: .quickReply)
+        NSLog("GlobalShortcutManager: Registered quick-reply shortcut: \(shortcut.displayLabel)")
+    }
+
+    private func registerSuggestNow() {
+        guard !isRegistrationSuspended else { return }
+        if let ref = hotKeyRefs.removeValue(forKey: .suggestNow) {
+            UnregisterEventHotKey(ref)
+        }
+        let (enabled, shortcut) = MainActor.assumeIsolated {
+            (ShortcutSettings.shared.suggestNowEnabled, ShortcutSettings.shared.suggestNowShortcut)
+        }
+        guard enabled else {
+            NSLog("GlobalShortcutManager: Suggest-now shortcut is disabled")
+            return
+        }
+        guard shortcut.supportsGlobalHotKey, let keyCode = shortcut.keyCode else {
+            NSLog("GlobalShortcutManager: Suggest-now shortcut is not a registerable hotkey")
+            return
+        }
+        registerHotKey(keyCode: Int(keyCode), modifiers: shortcut.carbonModifiers, id: .suggestNow)
+        NSLog("GlobalShortcutManager: Registered suggest-now shortcut: \(shortcut.displayLabel)")
+    }
+
+    private func registerClickThrough() {
+        guard !isRegistrationSuspended else { return }
+        if let ref = hotKeyRefs.removeValue(forKey: .clickThrough) {
+            UnregisterEventHotKey(ref)
+        }
+        let (enabled, shortcut) = MainActor.assumeIsolated {
+            (ShortcutSettings.shared.clickThroughEnabled, ShortcutSettings.shared.clickThroughShortcut)
+        }
+        guard enabled else {
+            NSLog("GlobalShortcutManager: Click-through shortcut is disabled")
+            return
+        }
+        guard shortcut.supportsGlobalHotKey, let keyCode = shortcut.keyCode else {
+            NSLog("GlobalShortcutManager: Click-through shortcut is not a registerable hotkey")
+            return
+        }
+        registerHotKey(keyCode: Int(keyCode), modifiers: shortcut.carbonModifiers, id: .clickThrough)
+        NSLog("GlobalShortcutManager: Registered click-through shortcut: \(shortcut.displayLabel)")
     }
 
     private func registerHotKey(keyCode: Int, modifiers: Int, id: HotKeyID) {
@@ -115,6 +281,40 @@ class GlobalShortcutManager {
             NSLog("GlobalShortcutManager: Ask Omi shortcut detected")
             DispatchQueue.main.async {
                 FloatingControlBarManager.shared.toggleAIInput()
+            }
+        case .copilot:
+            NSLog("GlobalShortcutManager: Copilot Snap shortcut detected")
+            DispatchQueue.main.async {
+                Task { @MainActor in
+                    await CopilotOrchestrator.shared.triggerSnap(source: "hotkey")
+                }
+            }
+        case .clickThrough:
+            NSLog("GlobalShortcutManager: Click-through shortcut detected")
+            DispatchQueue.main.async {
+                FloatingControlBarManager.shared.toggleClickThrough()
+            }
+        case .snapRegion:
+            NSLog("GlobalShortcutManager: Region-snap shortcut detected")
+            DispatchQueue.main.async {
+                Task { @MainActor in
+                    await CopilotOrchestrator.shared.triggerSnap(
+                        source: "hotkey_region", selectRegion: true)
+                }
+            }
+        case .quickReply:
+            NSLog("GlobalShortcutManager: Quick-reply shortcut detected")
+            DispatchQueue.main.async {
+                Task { @MainActor in
+                    await QuickReplyOrchestrator.shared.trigger(source: "hotkey")
+                }
+            }
+        case .suggestNow:
+            NSLog("GlobalShortcutManager: Suggest-now shortcut detected")
+            DispatchQueue.main.async {
+                Task { @MainActor in
+                    await LiveSuggestionsMonitor.shared.suggestNow()
+                }
             }
         }
 

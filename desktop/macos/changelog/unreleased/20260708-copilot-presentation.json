@@ -1,0 +1,3 @@
+{
+    "change": "Added a Presentation scenario and presentation-aware behavior: while you're presenting in Keynote or PowerPoint, Live Copilot stays quiet and only speaks up when the audience asks a question"
+}

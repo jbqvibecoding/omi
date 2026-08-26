@@ -9,6 +9,18 @@ class ShortcutSettings: ObservableObject {
     /// Notification posted when the Ask Omi shortcut changes so hotkeys can be re-registered.
     nonisolated static let askOmiShortcutChanged = Notification.Name("ShortcutSettings.askOmiShortcutChanged")
 
+    /// Notification posted when the Copilot Snap shortcut changes so hotkeys can be re-registered.
+    nonisolated static let copilotShortcutChanged = Notification.Name("ShortcutSettings.copilotShortcutChanged")
+
+    /// Notification posted when the click-through shortcut changes so hotkeys can be re-registered.
+    nonisolated static let clickThroughShortcutChanged = Notification.Name("ShortcutSettings.clickThroughShortcutChanged")
+    nonisolated static let suggestNowShortcutChanged = Notification.Name("ShortcutSettings.suggestNowShortcutChanged")
+    nonisolated static let snapRegionShortcutChanged = Notification.Name("ShortcutSettings.snapRegionShortcutChanged")
+    nonisolated static let quickReplyShortcutChanged = Notification.Name("ShortcutSettings.quickReplyShortcutChanged")
+
+    /// Notification posted when stealth mode is toggled so windows can refresh content protection.
+    nonisolated static let stealthModeChanged = Notification.Name("ShortcutSettings.stealthModeChanged")
+
     struct KeyboardShortcut: Codable, Hashable {
         var keyCode: UInt16?
         var keyDisplay: String?
@@ -278,6 +290,42 @@ class ShortcutSettings: ObservableObject {
     static let askOmiCommandJShortcut = KeyboardShortcut(keyCode: 38, keyDisplay: "J", modifiers: .command)
     static let defaultAskOmiShortcut = askOmiCommandOShortcut
 
+    // Copilot Snap presets. Default is ⌃↩ — ⌥↩ stays available as a preset, but
+    // option-based combos conflict with the default hold-⌥ push-to-talk shortcut,
+    // so it is not the default.
+    static let copilotControlReturnShortcut = KeyboardShortcut(keyCode: 36, keyDisplay: "↩", modifiers: .control)
+    static let copilotOptionReturnShortcut = KeyboardShortcut(keyCode: 36, keyDisplay: "↩", modifiers: .option)
+    static let defaultCopilotShortcut = copilotControlReturnShortcut
+
+    static let copilotPresets: [KeyboardShortcut] = [
+        copilotControlReturnShortcut,
+        askOmiCommandShiftReturnShortcut,
+        copilotOptionReturnShortcut,
+    ]
+
+    // "Suggest now" — ask the live copilot for a suggestion mid-conversation. ⌃⇧↩ sits
+    // next to the copilot key so the two read as one family under the same thumb.
+    static let suggestNowShortcut = KeyboardShortcut(
+        keyCode: 36, keyDisplay: "↩", modifiers: [.control, .shift])
+    static let defaultSuggestNowShortcut = suggestNowShortcut
+
+    // Snap a selected region instead of the whole screen. ⌥⌃↩ keeps it in the copilot
+    // family — same Return key, one extra modifier for "let me pick the part".
+    static let snapRegionShortcut = KeyboardShortcut(
+        keyCode: 36, keyDisplay: "↩", modifiers: [.control, .option])
+    static let defaultSnapRegionShortcut = snapRegionShortcut
+
+    // Quick Reply — draft the message you're about to type. ⌃⌥R, deliberately NOT cetus's
+    // double-tap right ⌥: omi's push-to-talk default is hold-⌥, and a double-tap on the
+    // same key would fight it every time.
+    static let quickReplyShortcut = KeyboardShortcut(
+        keyCode: 15, keyDisplay: "R", modifiers: [.control, .option])
+    static let defaultQuickReplyShortcut = quickReplyShortcut
+
+    // Click-through toggle (default ⌘M, matching cheating-daddy/glass Cmd+M convention).
+    static let clickThroughCommandMShortcut = KeyboardShortcut(keyCode: 46, keyDisplay: "M", modifiers: .command)
+    static let defaultClickThroughShortcut = clickThroughCommandMShortcut
+
     static let askOmiPresets: [KeyboardShortcut] = [
         askOmiCommandOShortcut,
         askOmiCommandReturnShortcut,
@@ -309,6 +357,88 @@ class ShortcutSettings: ObservableObject {
         didSet {
             UserDefaults.standard.set(askOmiEnabled, forKey: "shortcut_askOmiEnabled")
             NotificationCenter.default.post(name: Self.askOmiShortcutChanged, object: nil)
+        }
+    }
+
+    @Published var copilotShortcut: KeyboardShortcut {
+        didSet {
+            persistShortcut(copilotShortcut, forKey: Self.copilotShortcutDefaultsKey)
+            NotificationCenter.default.post(name: Self.copilotShortcutChanged, object: nil)
+        }
+    }
+
+    @Published var copilotEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(copilotEnabled, forKey: "shortcut_copilotEnabled")
+            NotificationCenter.default.post(name: Self.copilotShortcutChanged, object: nil)
+        }
+    }
+
+    /// Ask the live copilot for a suggestion on demand, mid-conversation.
+    @Published var suggestNowShortcut: KeyboardShortcut {
+        didSet {
+            persistShortcut(suggestNowShortcut, forKey: Self.suggestNowShortcutDefaultsKey)
+            NotificationCenter.default.post(name: Self.suggestNowShortcutChanged, object: nil)
+        }
+    }
+
+    @Published var suggestNowEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(suggestNowEnabled, forKey: "shortcut_suggestNowEnabled")
+            NotificationCenter.default.post(name: Self.suggestNowShortcutChanged, object: nil)
+        }
+    }
+
+    /// Drag out a region and snap only that.
+    @Published var snapRegionShortcut: KeyboardShortcut {
+        didSet {
+            persistShortcut(snapRegionShortcut, forKey: Self.snapRegionShortcutDefaultsKey)
+            NotificationCenter.default.post(name: Self.snapRegionShortcutChanged, object: nil)
+        }
+    }
+
+    @Published var snapRegionEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(snapRegionEnabled, forKey: "shortcut_snapRegionEnabled")
+            NotificationCenter.default.post(name: Self.snapRegionShortcutChanged, object: nil)
+        }
+    }
+
+    /// Draft a reply into whatever text field is focused.
+    @Published var quickReplyShortcut: KeyboardShortcut {
+        didSet {
+            persistShortcut(quickReplyShortcut, forKey: Self.quickReplyShortcutDefaultsKey)
+            NotificationCenter.default.post(name: Self.quickReplyShortcutChanged, object: nil)
+        }
+    }
+
+    @Published var quickReplyEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(quickReplyEnabled, forKey: "shortcut_quickReplyEnabled")
+            NotificationCenter.default.post(name: Self.quickReplyShortcutChanged, object: nil)
+        }
+    }
+
+    /// When true, the copilot HUD is hidden from screen recordings, screenshots, and
+    /// screen sharing (NSWindow.sharingType = .none) — the "invisible copilot" property.
+    @Published var stealthModeEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(stealthModeEnabled, forKey: "shortcut_stealthModeEnabled")
+            NotificationCenter.default.post(name: Self.stealthModeChanged, object: nil)
+        }
+    }
+
+    @Published var clickThroughShortcut: KeyboardShortcut {
+        didSet {
+            persistShortcut(clickThroughShortcut, forKey: Self.clickThroughShortcutDefaultsKey)
+            NotificationCenter.default.post(name: Self.clickThroughShortcutChanged, object: nil)
+        }
+    }
+
+    @Published var clickThroughEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(clickThroughEnabled, forKey: "shortcut_clickThroughEnabled")
+            NotificationCenter.default.post(name: Self.clickThroughShortcutChanged, object: nil)
         }
     }
 
@@ -518,12 +648,21 @@ class ShortcutSettings: ObservableObject {
         !Self.askOmiPresets.contains(askOmiShortcut)
     }
 
+    var copilotUsesCustomShortcut: Bool {
+        !Self.copilotPresets.contains(copilotShortcut)
+    }
+
     var pttUsesCustomShortcut: Bool {
         !Self.pttPresets.contains(pttShortcut)
     }
 
     private static let askOmiShortcutDefaultsKey = "shortcut_askOmiKey"
     private static let pttShortcutDefaultsKey = "shortcut_pttKey"
+    private static let copilotShortcutDefaultsKey = "shortcut_copilotKey"
+    private static let clickThroughShortcutDefaultsKey = "shortcut_clickThroughKey"
+    private static let suggestNowShortcutDefaultsKey = "shortcut_suggestNowKey"
+    private static let snapRegionShortcutDefaultsKey = "shortcut_snapRegionKey"
+    private static let quickReplyShortcutDefaultsKey = "shortcut_quickReplyKey"
 
     private init() {
         self.pttShortcut = Self.loadShortcut(
@@ -536,7 +675,38 @@ class ShortcutSettings: ObservableObject {
             legacyMapper: Self.legacyAskOmiShortcut
         ) ?? Self.defaultAskOmiShortcut
 
+        self.copilotShortcut = Self.loadShortcut(
+            forKey: Self.copilotShortcutDefaultsKey,
+            legacyMapper: { _ in nil }
+        ) ?? Self.defaultCopilotShortcut
+
+        self.clickThroughShortcut = Self.loadShortcut(
+            forKey: Self.clickThroughShortcutDefaultsKey,
+            legacyMapper: { _ in nil }
+        ) ?? Self.defaultClickThroughShortcut
+
+        self.suggestNowShortcut = Self.loadShortcut(
+            forKey: Self.suggestNowShortcutDefaultsKey,
+            legacyMapper: { _ in nil }
+        ) ?? Self.defaultSuggestNowShortcut
+
+        self.snapRegionShortcut = Self.loadShortcut(
+            forKey: Self.snapRegionShortcutDefaultsKey,
+            legacyMapper: { _ in nil }
+        ) ?? Self.defaultSnapRegionShortcut
+
+        self.quickReplyShortcut = Self.loadShortcut(
+            forKey: Self.quickReplyShortcutDefaultsKey,
+            legacyMapper: { _ in nil }
+        ) ?? Self.defaultQuickReplyShortcut
+
         self.askOmiEnabled = UserDefaults.standard.object(forKey: "shortcut_askOmiEnabled") as? Bool ?? true
+        self.copilotEnabled = UserDefaults.standard.object(forKey: "shortcut_copilotEnabled") as? Bool ?? true
+        self.stealthModeEnabled = UserDefaults.standard.object(forKey: "shortcut_stealthModeEnabled") as? Bool ?? true
+        self.clickThroughEnabled = UserDefaults.standard.object(forKey: "shortcut_clickThroughEnabled") as? Bool ?? true
+        self.suggestNowEnabled = UserDefaults.standard.object(forKey: "shortcut_suggestNowEnabled") as? Bool ?? true
+        self.snapRegionEnabled = UserDefaults.standard.object(forKey: "shortcut_snapRegionEnabled") as? Bool ?? true
+        self.quickReplyEnabled = UserDefaults.standard.object(forKey: "shortcut_quickReplyEnabled") as? Bool ?? true
         self.pttEnabled = UserDefaults.standard.object(forKey: "shortcut_pttEnabled") as? Bool ?? true
         self.doubleTapForLock = UserDefaults.standard.object(forKey: "shortcut_doubleTapForLock") as? Bool ?? true
         self.solidBackground = UserDefaults.standard.object(forKey: "shortcut_solidBackground") as? Bool ?? false

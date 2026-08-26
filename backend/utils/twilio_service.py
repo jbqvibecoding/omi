@@ -6,6 +6,7 @@ from twilio.rest import Client
 from twilio.jwt.access_token import AccessToken
 from twilio.jwt.access_token.grants import VoiceGrant
 from twilio.request_validator import RequestValidator
+from twilio.twiml.voice_response import VoiceResponse
 
 from database import phone_calls as phone_calls_db
 
@@ -16,6 +17,10 @@ auth_token = os.getenv('TWILIO_AUTH_TOKEN')
 api_key_sid = os.getenv('TWILIO_API_KEY_SID')
 api_key_secret = os.getenv('TWILIO_API_KEY_SECRET')
 twiml_app_sid = os.getenv('TWILIO_TWIML_APP_SID')
+# Sending identities for outbound SMS / WhatsApp / TTS calls (distinct from the
+# per-user verified caller-id used by the WebRTC voice path).
+from_number = os.getenv('TWILIO_FROM_NUMBER')
+whatsapp_from = os.getenv('TWILIO_WHATSAPP_FROM')
 
 _client = None
 
@@ -195,6 +200,32 @@ def list_caller_ids() -> list:
         }
         for cid in caller_ids
     ]
+
+
+def send_sms(to: str, body: str) -> str:
+    """Send an outbound SMS. Returns the Twilio message SID. Blocking (Twilio SDK)."""
+    if not from_number:
+        raise ValueError("TWILIO_FROM_NUMBER must be set to send SMS")
+    message = _get_client().messages.create(to=to, from_=from_number, body=body)
+    return message.sid
+
+
+def send_whatsapp(to: str, body: str) -> str:
+    """Send an outbound WhatsApp message. Returns the Twilio message SID. Blocking."""
+    if not whatsapp_from:
+        raise ValueError("TWILIO_WHATSAPP_FROM must be set to send WhatsApp messages")
+    message = _get_client().messages.create(to=f"whatsapp:{to}", from_=f"whatsapp:{whatsapp_from}", body=body)
+    return message.sid
+
+
+def start_tts_call(to: str, message: str) -> str:
+    """Place an outbound call that speaks `message` via TTS. Returns the call SID. Blocking."""
+    if not from_number:
+        raise ValueError("TWILIO_FROM_NUMBER must be set to place calls")
+    response = VoiceResponse()
+    response.say(message)
+    call = _get_client().calls.create(to=to, from_=from_number, twiml=str(response))
+    return call.sid
 
 
 def validate_twilio_signature(url: str, params: dict, signature: str) -> bool:
