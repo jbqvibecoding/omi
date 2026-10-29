@@ -20,7 +20,13 @@ final class RegionSelectCapture {
     private init() {}
 
     /// Show the picker and return JPEG data for the chosen region, or nil if cancelled.
-    func selectAndCapture(quality: CGFloat = 0.7) async -> Data? {
+    ///
+    /// The returned data is already sized for a vision call — a region crop is the shape
+    /// most likely to be tall and narrow, which is exactly what a width-only cap used to
+    /// wave through at full Retina size.
+    func selectAndCapture(
+        preset: GeminiImageCompression.Preset = .interactive
+    ) async -> Data? {
         guard CGPreflightScreenCaptureAccess() else {
             log("RegionSelectCapture: no screen recording permission")
             return nil
@@ -32,14 +38,14 @@ final class RegionSelectCapture {
         let region = await withCheckedContinuation { (cont: CheckedContinuation<Data?, Never>) in
             self.isFinished = false
             self.continuation = cont
-            self.presentOverlays(quality: quality)
+            self.presentOverlays(preset: preset)
         }
         return region
     }
 
     // MARK: - Overlay windows
 
-    private func presentOverlays(quality: CGFloat) {
+    private func presentOverlays(preset: GeminiImageCompression.Preset) {
         // One window per screen so the picker works wherever the pointer is.
         for screen in NSScreen.screens {
             let window = NSWindow(
@@ -57,10 +63,10 @@ final class RegionSelectCapture {
 
             let view = RegionSelectView(screen: screen)
             view.onComplete = { [weak self] rect, sourceScreen in
-                self?.finish(rect: rect, screen: sourceScreen, quality: quality)
+                self?.finish(rect: rect, screen: sourceScreen, preset: preset)
             }
             view.onCancel = { [weak self] in
-                self?.finish(rect: nil, screen: nil, quality: quality)
+                self?.finish(rect: nil, screen: nil, preset: preset)
             }
             window.contentView = view
             window.makeKeyAndOrderFront(nil)
@@ -78,14 +84,16 @@ final class RegionSelectCapture {
         windows.removeAll()
     }
 
-    private func finish(rect: NSRect?, screen: NSScreen?, quality: CGFloat) {
+    private func finish(
+        rect: NSRect?, screen: NSScreen?, preset: GeminiImageCompression.Preset
+    ) {
         guard !isFinished else { return }
         isFinished = true
         teardown()
 
         var data: Data?
         if let rect, let screen, rect.width >= 4, rect.height >= 4 {
-            data = Self.capture(globalRect: rect, on: screen, quality: quality)
+            data = Self.capture(globalRect: rect, on: screen, preset: preset)
         }
         let cont = continuation
         continuation = nil
@@ -95,7 +103,10 @@ final class RegionSelectCapture {
     // MARK: - The conversion that matters
 
     /// Capture `globalRect` (AppKit points, bottom-left origin, global space) from `screen`.
-    static func capture(globalRect: NSRect, on screen: NSScreen, quality: CGFloat) -> Data? {
+    static func capture(
+        globalRect: NSRect, on screen: NSScreen,
+        preset: GeminiImageCompression.Preset = .interactive
+    ) -> Data? {
         guard
             let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
                 as? CGDirectDisplayID,
@@ -127,17 +138,18 @@ final class RegionSelectCapture {
             return nil
         }
 
-        let rep = NSBitmapImageRep(cgImage: cropped)
-        guard
-            let data = rep.representation(
-                using: .jpeg, properties: [.compressionFactor: quality])
-        else {
+        // Downscaled here rather than by the caller: a crop is usually the tallest,
+        // narrowest image the app ever sends, and a width-only cap waved exactly this
+        // shape through at full Retina size.
+        guard let data = GeminiImageCompression.encode(cropped, preset: preset) else {
             log("RegionSelectCapture: JPEG encoding failed")
             return nil
         }
+        let size = GeminiImageCompression.targetSize(
+            width: cropped.width, height: cropped.height, longEdge: preset.longEdge)
         log(
-            "RegionSelectCapture: captured \(cropped.width)x\(cropped.height) px, "
-                + "JPEG \(data.count / 1024) KB")
+            "RegionSelectCapture: captured \(cropped.width)x\(cropped.height) px → "
+                + "\(size.width)x\(size.height), JPEG \(data.count / 1024) KB")
         return data
     }
 }

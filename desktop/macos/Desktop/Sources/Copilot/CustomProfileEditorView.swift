@@ -99,8 +99,7 @@ struct CustomProfileEditorView: View {
         do {
             let client = try GeminiClient(model: ModelQoS.Gemini.proactive, fallbackModel: "gemini-2.5-flash")
             let imageData: Data = {
-                guard let raw = ScreenCaptureManager.captureScreenJPEG() else { return Data() }
-                return GeminiImageCompression.compress(raw) ?? raw
+                return ScreenCaptureManager.captureForVision(preset: .interactive) ?? Data()
             }()
             let text = try await client.sendRequest(
                 prompt: CopilotPrompts.customProfileUserPrompt(description: describeText),

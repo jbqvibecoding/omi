@@ -389,10 +389,9 @@ final class LiveSuggestionsMonitor: ObservableObject {
                 "copilot_live_gate", properties: ["decision": "speak", "type": gateType])
 
             // Stage 2 — generate (structured vision call; the screen shows shared content/deck)
-            guard let rawScreenshot = ScreenCaptureManager.captureScreenJPEG() else {
+            guard let imageData = ScreenCaptureManager.captureForVision(preset: .background) else {
                 return ["gate": "SPEAK \(gateType)", "error": "screen capture failed"]
             }
-            let imageData = GeminiImageCompression.compress(rawScreenshot) ?? rawScreenshot
             let profile = await AIUserProfileService.shared.getLatestProfile()?.profileText
 
             let generatePrompt = CopilotPrompts.liveSuggestionUserPrompt(

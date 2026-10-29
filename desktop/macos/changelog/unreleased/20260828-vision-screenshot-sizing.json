@@ -1,0 +1,3 @@
+{
+    "change": "Fixed screenshots sent to the AI being capped by width instead of their longest side — a tall region snap was sent at full size, and a wide screen was shrunk further than it needed to be, making small text hard to read"
+}

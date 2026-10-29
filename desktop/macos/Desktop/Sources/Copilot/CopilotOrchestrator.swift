@@ -564,16 +564,16 @@ final class CopilotOrchestrator {
         // responds instantly to the keypress.
         FloatingControlBarManager.shared.beginCopilotSnap()
 
-        // Capture + context assembly in parallel.
+        // Capture + context assembly in parallel. A region shot is already sized for a
+        // vision call by the picker, so it is not put through the compressor twice.
         async let snapshotTask = CopilotContextEngine.shared.snapshot()
-        let rawScreenshot = regionShot ?? ScreenCaptureManager.captureScreenJPEG()
+        let screenshot = regionShot ?? ScreenCaptureManager.captureForVision(preset: .interactive)
         let context = await snapshotTask
 
-        guard let rawScreenshot else {
+        guard let imageData = screenshot else {
             presentFailure("Couldn't capture the screen. Check Screen Recording permission in System Settings.")
             return ["error": "screen capture failed"]
         }
-        let imageData = GeminiImageCompression.compress(rawScreenshot) ?? rawScreenshot
 
         do {
             let client = try cachedGeminiClient()

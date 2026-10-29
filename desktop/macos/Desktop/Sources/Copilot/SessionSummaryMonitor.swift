@@ -217,8 +217,7 @@ final class SessionSummaryMonitor: ObservableObject {
             // Attach the current screen (shared content/deck) like glass's summary does — it
             // grounds the summary in what's visible, and keeps a valid image part on the request.
             let imageData: Data = {
-                guard let raw = ScreenCaptureManager.captureScreenJPEG() else { return Data() }
-                return GeminiImageCompression.compress(raw) ?? raw
+                return ScreenCaptureManager.captureForVision(preset: .background) ?? Data()
             }()
             let responseText = try await withThrowingTimeoutSummary(seconds: generateTimeout) {
                 try await client.sendRequest(

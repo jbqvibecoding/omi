@@ -38,8 +38,8 @@ enum WatcherSensorResolver {
         if let re = try? NSRegularExpression(pattern: "\\$SCREEN(?!_OCR)") {
             let range = NSRange(text.startIndex..., in: text)
             if re.firstMatch(in: text, range: range) != nil {
-                if let raw = ScreenCaptureManager.captureScreenJPEG() {
-                    images.append(GeminiImageCompression.compress(raw) ?? raw)
+                if let shot = ScreenCaptureManager.captureForVision(preset: .background) {
+                    images.append(shot)
                 }
                 text = re.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
             }

@@ -67,7 +67,7 @@ final class QuickReplyOrchestrator {
         // Take the frame before the panel appears, or our own window sits on top of the
         // thread being replied to. Stealth mode normally keeps it out of captures, but
         // that's a setting the user can switch off, and this shouldn't depend on it.
-        let rawScreenshot = ScreenCaptureManager.captureScreenJPEG()
+        let screenshot = ScreenCaptureManager.captureForVision(preset: .interactive)
 
         QuickReplyPanel.shared.present(
             targetAppName: appName,
@@ -92,11 +92,10 @@ final class QuickReplyOrchestrator {
         let context = await snapshotTask
         let url = await urlTask
 
-        guard let rawScreenshot else {
+        guard let imageData = screenshot else {
             finishWithError(model, "Couldn't capture the screen. Check Screen Recording permission.")
             return ["error": "screen capture failed"]
         }
-        let imageData = GeminiImageCompression.compress(rawScreenshot) ?? rawScreenshot
 
         do {
             let client = try cachedGeminiClient()
