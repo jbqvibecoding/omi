@@ -656,6 +656,96 @@ class ShortcutSettings: ObservableObject {
         !Self.pttPresets.contains(pttShortcut)
     }
 
+    // MARK: - Conflicts
+
+    /// One registered global shortcut, for conflict checking.
+    struct ShortcutBinding: Identifiable {
+        let id: String
+        let label: String
+        let shortcut: KeyboardShortcut
+        let enabled: Bool
+    }
+
+    /// Every shortcut omi registers globally, in one place.
+    ///
+    /// They have to be enumerated somewhere, because the thing that goes wrong is
+    /// invisible: macOS lets exactly one app hold a given combination, a second
+    /// `RegisterEventHotKey` for it simply fails, and the feature that lost just stops
+    /// working with nothing on screen to say so.
+    var allBindings: [ShortcutBinding] {
+        [
+            ShortcutBinding(id: "askOmi", label: "Ask omi", shortcut: askOmiShortcut, enabled: askOmiEnabled),
+            ShortcutBinding(id: "copilot", label: "Copilot Snap", shortcut: copilotShortcut, enabled: copilotEnabled),
+            ShortcutBinding(id: "clickThrough", label: "Click-through", shortcut: clickThroughShortcut, enabled: clickThroughEnabled),
+            ShortcutBinding(id: "suggestNow", label: "Suggest now", shortcut: suggestNowShortcut, enabled: suggestNowEnabled),
+            ShortcutBinding(id: "snapRegion", label: "Snap a region", shortcut: snapRegionShortcut, enabled: snapRegionEnabled),
+            ShortcutBinding(id: "quickReply", label: "Quick reply", shortcut: quickReplyShortcut, enabled: quickReplyEnabled),
+            ShortcutBinding(id: "ptt", label: "Push to talk", shortcut: pttShortcut, enabled: pttEnabled),
+        ]
+    }
+
+    /// Two shortcuts that cannot both work, and why.
+    struct ShortcutClash: Identifiable {
+        let id: String
+        let first: String
+        let second: String
+        let keys: String
+        /// True for an exact collision (only one can register), false for the softer case
+        /// where one shortcut's modifier is the other's whole trigger.
+        let isHardCollision: Bool
+
+        var message: String {
+            isHardCollision
+                ? "\(first) and \(second) are both \(keys) — only one of them will work."
+                : "\(second) is \(keys) plus a key, and \(keys) on its own is \(first) — "
+                    + "pressing it can start \(first.lowercased()) as well."
+        }
+    }
+
+    /// Pairs that cannot both work as configured.
+    ///
+    /// Two kinds. A hard collision is two chords with the same key and modifiers: macOS
+    /// gives the combination to whichever registered first and the other is simply dead.
+    ///
+    /// The soft one is push-to-talk, which is a *modifier held down*. `matchesFlagsChanged`
+    /// compares the modifier set exactly, so ⌃⌥R does not satisfy a hold-⌥ trigger and is
+    /// not worth warning about — but ⌥↩ does, because pressing ⌥ first puts the keyboard
+    /// in exactly that state on the way to the chord. That is why ⌥↩ is a Copilot preset
+    /// and not the default, and until now it was a comment in this file rather than
+    /// something the user could see.
+    func conflicts() -> [ShortcutClash] {
+        let active = allBindings.filter(\.enabled)
+        var clashes: [ShortcutClash] = []
+
+        let chords = active.filter { !$0.shortcut.modifierOnly }
+        for (index, left) in chords.enumerated() {
+            for right in chords.dropFirst(index + 1)
+            where left.shortcut.keyCode == right.shortcut.keyCode
+                && left.shortcut.modifiers == right.shortcut.modifiers
+            {
+                clashes.append(
+                    ShortcutClash(
+                        id: "\(left.id)|\(right.id)", first: left.label, second: right.label,
+                        keys: left.shortcut.displayLabel, isHardCollision: true))
+            }
+        }
+
+        for held in active where held.shortcut.modifierOnly {
+            let heldModifiers = held.shortcut.modifiers
+            guard !heldModifiers.isEmpty else { continue }
+            // Exactly equal, not `contains`: the keyboard only passes through the held
+            // state when the chord has no other modifiers.
+            for chord in chords where chord.shortcut.modifiers == heldModifiers {
+                clashes.append(
+                    ShortcutClash(
+                        id: "\(held.id)|\(chord.id)", first: held.label, second: chord.label,
+                        keys: held.shortcut.displayLabel, isHardCollision: false))
+            }
+        }
+        return clashes
+    }
+
+
     private static let askOmiShortcutDefaultsKey = "shortcut_askOmiKey"
     private static let pttShortcutDefaultsKey = "shortcut_pttKey"
     private static let copilotShortcutDefaultsKey = "shortcut_copilotKey"

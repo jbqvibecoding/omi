@@ -1,0 +1,3 @@
+{
+    "change": "Settings now lists every omi keyboard shortcut in one place and warns when two are set to the same keys or when another app has taken one — previously the losing shortcut just stopped working with nothing to say so"
+}

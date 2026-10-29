@@ -12,6 +12,17 @@ class GlobalShortcutManager {
     private var hotKeyRefs: [HotKeyID: EventHotKeyRef] = [:]
     private var isRegistrationSuspended = false
 
+    /// Posted when a hotkey fails to register, so settings can stop pretending it worked.
+    nonisolated static let registrationFailuresChanged = Notification.Name(
+        "GlobalShortcutManager.registrationFailuresChanged")
+
+    /// Binding ids (matching `ShortcutSettings.ShortcutBinding.id`) whose hotkey the OS refused.
+    ///
+    /// Almost always means another app already holds the combination. Carbon reports it
+    /// as a return code from `RegisterEventHotKey` and nothing else happens — so without
+    /// this the shortcut is simply dead, with a line in the log nobody reads.
+    private(set) var registrationFailures: Set<String> = []
+
     private enum HotKeyID: UInt32 {
         case askOmi = 2
         case copilot = 3
@@ -19,6 +30,19 @@ class GlobalShortcutManager {
         case suggestNow = 5
         case snapRegion = 6
         case quickReply = 7
+
+        /// Matches `ShortcutSettings.ShortcutBinding.id`, so the settings page can line a failure
+        /// up with the row it belongs to.
+        var bindingId: String {
+            switch self {
+            case .askOmi: return "askOmi"
+            case .copilot: return "copilot"
+            case .clickThrough: return "clickThrough"
+            case .suggestNow: return "suggestNow"
+            case .snapRegion: return "snapRegion"
+            case .quickReply: return "quickReply"
+            }
+        }
     }
 
     private var shortcutObserver: NSObjectProtocol?
@@ -255,8 +279,23 @@ class GlobalShortcutManager {
 
         if status == noErr, let ref = hotKeyRef {
             hotKeyRefs[id] = ref
+            noteRegistration(id, failed: false)
         } else {
             NSLog("GlobalShortcutManager: Failed to register hotkey (keycode \(keyCode)), error: \(status)")
+            noteRegistration(id, failed: true)
+        }
+    }
+
+    private func noteRegistration(_ id: HotKeyID, failed: Bool) {
+        let before = registrationFailures
+        if failed {
+            registrationFailures.insert(id.bindingId)
+        } else {
+            registrationFailures.remove(id.bindingId)
+        }
+        guard registrationFailures != before else { return }
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: Self.registrationFailuresChanged, object: nil)
         }
     }
 
