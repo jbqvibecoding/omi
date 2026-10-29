@@ -19,7 +19,10 @@ enum MeetingMarkdownExporter {
         scenarioName: String?,
         sessionId: Int64?,
         segments: [SpeakerSegment],
-        notesMarkdown: String?
+        notesMarkdown: String?,
+        /// The deck walkthrough, when slide tracking caught one. Passed in rather than
+        /// read here so this stays a pure function of its arguments.
+        deckMarkdown: String? = nil
     ) -> URL? {
         let transcriptLines = segments.compactMap { segment -> String? in
             let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -27,7 +30,9 @@ enum MeetingMarkdownExporter {
             let speaker = segment.isUser ? "You" : "Speaker \(segment.speaker)"
             return "[\(timestamp(segment.start))] \(speaker): \(text)"
         }
-        guard !transcriptLines.isEmpty || !(notesMarkdown ?? "").isEmpty else { return nil }
+        guard !transcriptLines.isEmpty || !(notesMarkdown ?? "").isEmpty
+            || !(deckMarkdown ?? "").isEmpty
+        else { return nil }
 
         let duration = segments.last.map { Int($0.end.rounded()) } ?? 0
         let dateFormatter = ISO8601DateFormatter()
@@ -51,6 +56,12 @@ enum MeetingMarkdownExporter {
             lines.append("## Notes")
             lines.append("")
             lines.append(notesMarkdown)
+            lines.append("")
+        }
+        // Between the notes and the transcript: it is a summary of the session, but one
+        // that reads in order, so it belongs next to the thing it is ordered against.
+        if let deckMarkdown, !deckMarkdown.isEmpty {
+            lines.append(deckMarkdown)
             lines.append("")
         }
         if !transcriptLines.isEmpty {

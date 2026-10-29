@@ -102,7 +102,8 @@ final class SessionSummaryMonitor: ObservableObject {
                     scenarioName: scenarioName,
                     sessionId: sessionId,
                     segments: segments,
-                    notesMarkdown: markdown
+                    notesMarkdown: markdown,
+                    deckMarkdown: SlideTimeline.shared.markdownSection()
                 )
             }
             // Everything above records what was said; this records what it means about the

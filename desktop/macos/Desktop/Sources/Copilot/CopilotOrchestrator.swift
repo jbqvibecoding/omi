@@ -344,6 +344,14 @@ final class CopilotOrchestrator {
         }
 
         DesktopAutomationActionRegistry.shared.register(
+            name: "copilot_slides_dump",
+            summary: "Show the deck timeline for the running session: how many slides were "
+                + "detected and how many have been described."
+        ) { _ in
+            await MainActor.run { SlideTimeline.shared.debugDump() }
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
             name: "copilot_ambient_dump",
             summary: "Show what ambient text context has captured: entries held, how many "
                 + "carry a real URL, and the latest app. Pass clear=1 to forget it all.",

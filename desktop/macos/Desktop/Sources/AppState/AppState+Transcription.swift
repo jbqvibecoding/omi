@@ -216,6 +216,8 @@ extension AppState {
             LiveSuggestionsMonitor.shared.startSession(sessionId: sessionId)
             // Start structured session summary
             SessionSummaryMonitor.shared.startSession(sessionId: sessionId)
+            // Track which slide is up and what gets said over it
+            SlideTimeline.shared.start()
           }
           if let backendId = await MainActor.run(body: { () -> String? in
             let candidate = self.pendingBackendConversationId ?? self.currentBackendConversationId
@@ -863,6 +865,11 @@ extension AppState {
     LiveNotesMonitor.shared.clear()
     LiveSuggestionsMonitor.shared.endSession()
     SessionSummaryMonitor.shared.endSession()
+    // Rolling into the next conversation: the previous deck is over, and its slides must
+    // not be attributed to what is about to be said.
+    SlideTimeline.shared.stop()
+    SlideTimeline.shared.reset()
+    SlideTimeline.shared.start()
 
     // Reset the recording start time and backend binding for the next conversation.
     // If the new WebSocket fast-reconnects before the backend finalizes the prior
@@ -999,6 +1006,7 @@ extension AppState {
           LiveNotesMonitor.shared.startSession(sessionId: sessionId)
           LiveSuggestionsMonitor.shared.startSession(sessionId: sessionId)
           SessionSummaryMonitor.shared.startSession(sessionId: sessionId)
+          SlideTimeline.shared.start()
         }
         if let backendId = await MainActor.run(body: { () -> String? in
           let candidate = self.pendingBackendConversationId ?? self.currentBackendConversationId
@@ -1101,6 +1109,8 @@ extension AppState {
     LiveNotesMonitor.shared.endSession()
     LiveSuggestionsMonitor.shared.endSession()
     SessionSummaryMonitor.shared.endSession()
+    // Stopped, not reset: the summary and the export still have to read the deck.
+    SlideTimeline.shared.stop()
 
     // Mark DB session as finished (pending upload / crash recovery)
     if finishSession, let sessionId = currentSessionId {

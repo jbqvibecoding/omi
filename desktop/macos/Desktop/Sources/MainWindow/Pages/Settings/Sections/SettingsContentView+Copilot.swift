@@ -132,6 +132,10 @@ extension SettingsContentView {
                 CopilotAmbientContextRow()
             }
 
+            settingsCard(settingId: "copilot.slides") {
+                CopilotSlideTimelineRow()
+            }
+
             // Answers from your notes (notes-folder retrieval)
             settingsCard(settingId: "copilot.notes") {
                 VStack(alignment: .leading, spacing: 16) {
@@ -560,6 +564,62 @@ private struct CopilotTriggerPolicyRow: View {
             .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
         }
         .onAppear { policy = CopilotSettings.shared.triggerPolicy }
+    }
+}
+
+/// Slide tracking — the deck timeline for a recorded session.
+///
+/// Says out loud that it reads the frames screen capture already takes, because the honest
+/// answer to "does this cost me battery" is no, and the honest answer to "does it work
+/// with screen capture off" is also no.
+private struct CopilotSlideTimelineRow: View {
+    @State private var enabled = false
+    @ObservedObject private var timeline = SlideTimeline.shared
+
+    private var screenCaptureOn: Bool { AssistantSettings.shared.screenAnalysisEnabled }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "rectangle.on.rectangle").scaledFont(size: 16)
+                    .foregroundColor(OmiColors.textTertiary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Follow the slides").scaledFont(size: 16, weight: .semibold)
+                        .foregroundColor(OmiColors.textPrimary)
+                    Text(
+                        "Notices when the deck moves on and records what was said over each "
+                            + "slide, so the summary reads in the order it happened."
+                    )
+                    .scaledFont(size: 13).foregroundColor(OmiColors.textSecondary)
+                }
+                Spacer()
+                Toggle("", isOn: $enabled).toggleStyle(.switch).labelsHidden()
+                    .disabled(!screenCaptureOn)
+                    .onChange(of: enabled) { _, value in
+                        CopilotSettings.shared.slideTimelineEnabled = value
+                    }
+            }
+
+            if !screenCaptureOn {
+                Text(
+                    "Needs screen capture on — it reads the frames that are already being "
+                        + "taken rather than taking its own."
+                )
+                .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+            } else if enabled {
+                Text(statusLine)
+                    .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+            }
+        }
+        .onAppear { enabled = CopilotSettings.shared.slideTimelineEnabled }
+    }
+
+    private var statusLine: String {
+        guard timeline.isRunning || !timeline.slides.isEmpty else {
+            return "One AI call per slide change, only while you're recording."
+        }
+        let captioned = timeline.slides.filter { !$0.caption.isEmpty }.count
+        return "\(captioned) of \(timeline.slides.count) slides described this session."
     }
 }
 

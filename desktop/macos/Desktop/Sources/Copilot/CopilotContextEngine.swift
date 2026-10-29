@@ -24,6 +24,9 @@ final class CopilotContextEngine {
         /// The page the user is on, when they were in a browser. Nothing else in the
         /// snapshot can supply this — OCR of an address bar is a guess.
         let pageURL: String?
+        /// The deck so far: which slide was up, when, and what was said over it. Empty
+        /// unless slide tracking is on and a session is running.
+        let slideTimeline: String
         let userProfile: String?
     }
 
@@ -46,6 +49,7 @@ final class CopilotContextEngine {
             recentOCR: ocr,
             ambientText: ambientText,
             pageURL: CopilotSettings.shared.ambientTextEnabled ? ambient.currentURL : nil,
+            slideTimeline: SlideTimeline.shared.promptBlock(),
             userProfile: profile
         )
     }

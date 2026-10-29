@@ -93,6 +93,14 @@ enum CopilotPrompts {
             sections.append("Page the user is on: \(url)")
         }
 
+        if !context.slideTimeline.isEmpty {
+            // The deck is the structure of the meeting, which the transcript alone does
+            // not carry: "they asked about pricing" lands differently when it was asked
+            // on the slide before the pricing one.
+            sections.append(
+                "The deck in this session so far, oldest first:\n\(context.slideTimeline)")
+        }
+
         if !context.ambientText.isEmpty {
             // Distinguished from OCR on purpose: this came from the app's own accessibility
             // tree, so it's exact. When the two disagree, this one is right.

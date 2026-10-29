@@ -27,6 +27,7 @@ class CopilotSettings {
     private let triggerPolicyKey = "copilotTriggerPolicy"
     private let insertModeKey = "copilotInsertMode"
     private let ambientTextEnabledKey = "copilotAmbientTextEnabled"
+    private let slideTimelineEnabledKey = "copilotSlideTimelineEnabled"
 
     // MARK: - Default Values
 
@@ -55,6 +56,7 @@ class CopilotSettings {
             triggerPolicyKey: CopilotTriggerPolicy.auto.rawValue,
             insertModeKey: TextInsertion.InsertMode.type.rawValue,
             ambientTextEnabledKey: false,
+            slideTimelineEnabledKey: false,
         ])
     }
 
@@ -244,6 +246,17 @@ class CopilotSettings {
         get { UserDefaults.standard.bool(forKey: ambientTextEnabledKey) }
         set {
             UserDefaults.standard.set(newValue, forKey: ambientTextEnabledKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Whether omi tracks which slide was up during a session and what was said over it.
+    /// Off by default: it costs one vision call per page turn, and it only works when
+    /// screen capture is on, since it reads the frames Rewind already took.
+    var slideTimelineEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: slideTimelineEnabledKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: slideTimelineEnabledKey)
             NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
         }
     }
