@@ -109,7 +109,7 @@ enum CopilotPrompts {
             sections.append("What we know about the user:\n\(profile)")
         }
 
-        if let prep = CopilotPrepSheetStore.shared.promptBlock(
+        if let prep = CopilotPrepSheetStore.shared.routedPromptBlock(
             for: CopilotSettings.shared.scenario)
         {
             sections.append(prep)
@@ -166,7 +166,7 @@ extension CopilotPrompts {
         preferences: String? = nil
     ) -> String {
         var sections = [scenario.systemPromptBlock]
-        if let prep = CopilotPrepSheetStore.shared.promptBlock(for: scenario) {
+        if let prep = CopilotPrepSheetStore.shared.routedPromptBlock(for: scenario) {
             sections.append(prep)
         }
         if let preferences, !preferences.isEmpty { sections.append(preferences) }
@@ -234,7 +234,7 @@ extension CopilotPrompts {
         preferences: String? = nil
     ) -> String {
         var sections: [String] = ["Trigger type: \(gateType)"]
-        if let prep = CopilotPrepSheetStore.shared.promptBlock(
+        if let prep = CopilotPrepSheetStore.shared.routedPromptBlock(
             for: CopilotSettings.shared.scenario)
         {
             sections.append(prep)

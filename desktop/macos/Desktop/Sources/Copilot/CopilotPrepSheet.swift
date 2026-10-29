@@ -95,13 +95,46 @@ final class CopilotPrepSheetStore: ObservableObject {
     /// user did not write either, and a job description is a very natural place for someone
     /// to hide an instruction.
     func promptBlock(for profile: CopilotScenarioProfile) -> String? {
+        block(for: profile, plan: CopilotPrepRouter.plan(for: .general, profile: profile))
+    }
+
+    /// The prompt block, routed by what the other side is actually asking about.
+    ///
+    /// Everything the user filled in is material the copilot *could* use; almost none of
+    /// it is material it can use for the question in front of it. Injecting all of it
+    /// every time buries the one relevant line and spends the model's attention competing
+    /// with the live transcript. So the category is read off the recent turns and only the
+    /// slots that category can answer with are injected, at a budget that suits it.
+    ///
+    /// With no transcript — a Snap, or a session that has not started — this falls back to
+    /// `.general`, which is exactly the behaviour that existed before routing.
+    func promptBlock(for profile: CopilotScenarioProfile, transcript: [SpeakerSegment]) -> String? {
+        let category = CopilotPrepRouter.detect(from: transcript)
+        return block(for: profile, plan: CopilotPrepRouter.plan(for: category, profile: profile))
+    }
+
+    /// The routed block for whatever conversation is live right now.
+    func routedPromptBlock(for profile: CopilotScenarioProfile) -> String? {
+        let category = CopilotPrepRouter.currentCategory()
+        return block(for: profile, plan: CopilotPrepRouter.plan(for: category, profile: profile))
+    }
+
+    private func block(
+        for profile: CopilotScenarioProfile, plan: [CopilotPrepRouter.SlotBudget]
+    ) -> String? {
         guard let sheet = sheet(for: profile.id) else { return nil }
-        let slots = profile.effectivePrepSlots
+        let labels = Dictionary(
+            profile.effectivePrepSlots.map { ($0.key, $0.label) }, uniquingKeysWith: { first, _ in first })
         var filled: [String] = []
-        for slot in slots {
-            let value = sheet.value(for: slot.key)
+        var seen = Set<String>()
+        for budget in plan {
+            // A plan may name a slot this scenario does not define — the interview-only
+            // keys are listed unconditionally so every other scenario just skips them.
+            guard let label = labels[budget.key], !seen.contains(budget.key) else { continue }
+            let value = sheet.value(for: budget.key)
             guard !value.isEmpty else { continue }
-            filled.append("[\(slot.label)]\n\(value)")
+            seen.insert(budget.key)
+            filled.append("[\(label)]\n\(String(value.prefix(budget.characters)))")
         }
         guard !filled.isEmpty else { return nil }
         return """
@@ -124,9 +157,15 @@ final class CopilotPrepSheetStore: ObservableObject {
 
     func debugDump() -> [String: String] {
         let profile = CopilotSettings.shared.scenario
+        let category = CopilotPrepRouter.currentCategory()
+        let plan = CopilotPrepRouter.plan(for: category, profile: profile)
         var out: [String: String] = [
             "scenario": profile.id,
             "slots": String(profile.effectivePrepSlots.count),
+            // What the router makes of the conversation right now, and what that routes
+            // to — the two things worth being able to check from outside the app.
+            "category": category.rawValue,
+            "would_inject": plan.map { "\($0.key)@\($0.characters)" }.joined(separator: ","),
         ]
         guard let sheet = sheet(for: profile.id) else {
             out["filled"] = "0"

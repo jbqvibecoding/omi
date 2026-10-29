@@ -9,9 +9,22 @@ struct CopilotPrepSheetView: View {
     @ObservedObject private var store = CopilotPrepSheetStore.shared
     @State private var values: [String: String] = [:]
     @State private var scenarioId: String = ""
+    @State private var showOptional = false
     let onDismiss: () -> Void
 
     private var profile: CopilotScenarioProfile { CopilotSettings.shared.scenario }
+
+    /// The first two slots are what every answer in this scenario is grounded in, so they
+    /// go into every prompt. The router decides the rest per question.
+    private var coreSlots: [PrepSlotSpec] { Array(profile.effectivePrepSlots.prefix(2)) }
+    private var optionalSlots: [PrepSlotSpec] { Array(profile.effectivePrepSlots.dropFirst(2)) }
+
+    private var optionalSummary: String {
+        let filled = optionalSlots.filter { !(values[$0.key] ?? "").isEmpty }.count
+        return filled == 0
+            ? "only used when they come up — \(optionalSlots.count) optional"
+            : "\(filled) of \(optionalSlots.count) filled in"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -28,28 +41,25 @@ struct CopilotPrepSheetView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    ForEach(profile.effectivePrepSlots) { slot in
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text(slot.label).scaledFont(size: 13, weight: .medium)
+                    ForEach(coreSlots) { slotEditor($0) }
+
+                    // The rest are routed: each only reaches the model when the other
+                    // side asks the kind of question it answers. Folded away so the form
+                    // still opens as two boxes, and so it is obvious that leaving them
+                    // empty costs nothing.
+                    if !optionalSlots.isEmpty {
+                        DisclosureGroup(isExpanded: $showOptional) {
+                            VStack(alignment: .leading, spacing: 14) {
+                                ForEach(optionalSlots) { slotEditor($0) }
+                            }
+                            .padding(.top, 10)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text("For specific questions").scaledFont(size: 13, weight: .medium)
                                     .foregroundColor(OmiColors.textSecondary)
-                                Spacer()
-                                Text(counter(for: slot.key)).scaledFont(size: 10)
+                                Text(optionalSummary).scaledFont(size: 11)
                                     .foregroundColor(OmiColors.textTertiary)
                             }
-                            TextEditor(
-                                text: Binding(
-                                    get: { values[slot.key] ?? "" },
-                                    set: { values[slot.key] = $0 })
-                            )
-                            .font(.system(size: 12))
-                            .frame(minHeight: 90)
-                            .scrollContentBackground(.hidden)
-                            .padding(6)
-                            .background(OmiColors.backgroundTertiary.opacity(0.5))
-                            .cornerRadius(6)
-                            Text(slot.placeholder).scaledFont(size: 11)
-                                .foregroundColor(OmiColors.textTertiary)
                         }
                     }
                 }
@@ -78,6 +88,32 @@ struct CopilotPrepSheetView: View {
         .onAppear { load() }
     }
 
+    @ViewBuilder
+    private func slotEditor(_ slot: PrepSlotSpec) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(slot.label).scaledFont(size: 13, weight: .medium)
+                    .foregroundColor(OmiColors.textSecondary)
+                Spacer()
+                Text(counter(for: slot.key)).scaledFont(size: 10)
+                    .foregroundColor(OmiColors.textTertiary)
+            }
+            TextEditor(
+                text: Binding(
+                    get: { values[slot.key] ?? "" },
+                    set: { values[slot.key] = $0 })
+            )
+            .font(.system(size: 12))
+            .frame(minHeight: 90)
+            .scrollContentBackground(.hidden)
+            .padding(6)
+            .background(OmiColors.backgroundTertiary.opacity(0.5))
+            .cornerRadius(6)
+            Text(slot.placeholder).scaledFont(size: 11)
+                .foregroundColor(OmiColors.textTertiary)
+        }
+    }
+
     private func counter(for key: String) -> String {
         let count = (values[key] ?? "").count
         guard count > 0 else { return "" }
@@ -94,6 +130,8 @@ struct CopilotPrepSheetView: View {
             loaded[slot.key] = sheet?.value(for: slot.key) ?? ""
         }
         values = loaded
+        // Opening collapsed over text the user already typed would read as data loss.
+        showOptional = optionalSlots.contains { !(loaded[$0.key] ?? "").isEmpty }
     }
 
     private func save() {

@@ -86,9 +86,19 @@ struct CopilotScenarioProfile: Identifiable, Equatable, Codable {
             they did not list.
             """,
         triggerVocabulary: ["tell me about", "why did you", "how would you", "experience with", "walk me through"],
+        // The first two are the core slots, injected whatever is asked. The rest are
+        // routed by `CopilotPrepRouter`: each one only reaches the prompt when the other
+        // side asks the kind of question it answers, so filling them in costs nothing on
+        // the calls they are irrelevant to.
         prepSlots: [
             PrepSlotSpec(key: "background", label: "Your background", placeholder: "Paste your résumé, or the projects and numbers you want it to draw answers from."),
             PrepSlotSpec(key: "role", label: "The role and company", placeholder: "Paste the job description, plus anything you know about the team or the interviewer."),
+            PrepSlotSpec(key: "stories", label: "Your three best stories", placeholder: "The situations you keep coming back to, with what you actually did and how it turned out. Used when they ask for a time you did something."),
+            PrepSlotSpec(key: "whyCompany", label: "Why this company", placeholder: "The real reason, in your words — specific enough that it could not be said about anyone else."),
+            PrepSlotSpec(key: "whyLeaving", label: "Why you are leaving", placeholder: "How you want to put it out loud. Written down once now so it does not come out wrong under pressure."),
+            PrepSlotSpec(key: "workStyle", label: "How you work", placeholder: "What you need from a team and a manager, and how you make decisions."),
+            PrepSlotSpec(key: "salaryTarget", label: "What you want to be paid", placeholder: "Your number and the range you will say out loud. Only used when they bring up money."),
+            PrepSlotSpec(key: "questionsToAsk", label: "What you want to ask them", placeholder: "Surfaced when they hand the time back to you."),
         ]
     )
 

@@ -133,6 +133,9 @@ enum QuickReplyPrompts {
             sections.append("What we know about the user:\n\(profile)")
         }
 
+        // Deliberately the unrouted block. Routing reads the category off what the other
+        // side said in the *transcript*, and here the other side is a message on screen —
+        // any meeting running in the background is a different conversation entirely.
         if let prep = CopilotPrepSheetStore.shared.promptBlock(
             for: CopilotSettings.shared.scenario)
         {
