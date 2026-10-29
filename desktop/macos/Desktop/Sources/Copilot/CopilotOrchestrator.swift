@@ -344,6 +344,23 @@ final class CopilotOrchestrator {
         }
 
         DesktopAutomationActionRegistry.shared.register(
+            name: "copilot_questions_dump",
+            summary: "Show the questions the other side asked that nothing answered. Pass "
+                + "answer=<n> to answer the nth pending one (1 = newest).",
+            params: ["answer"]
+        ) { params in
+            let pending = await MainActor.run { CopilotQuestionBacklog.shared.pending }
+            guard let raw = params["answer"], let index = Int(raw) else {
+                return await MainActor.run { CopilotQuestionBacklog.shared.debugDump() }
+            }
+            guard index >= 1, index <= pending.count else {
+                return ["error": "no pending question \(index) (have \(pending.count))"]
+            }
+            return await LiveSuggestionsMonitor.shared.answerBackloggedQuestion(
+                id: pending[index - 1].id)
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
             name: "copilot_slides_dump",
             summary: "Show the deck timeline for the running session: how many slides were "
                 + "detected and how many have been described."

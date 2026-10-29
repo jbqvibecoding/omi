@@ -89,6 +89,7 @@ final class LiveSuggestionsMonitor: ObservableObject {
         lastEvalAt = .distantPast
         lastSuggestionAt = .distantPast
         suggestionsThisSession = []
+        CopilotQuestionBacklog.shared.clear()
         gateSpeakCount = 0
         gateSkipCount = 0
         preGateSkipCount = 0
@@ -144,6 +145,9 @@ final class LiveSuggestionsMonitor: ObservableObject {
         kbHits = []
         meetingBrief = nil
         pendingTalkTrack = nil
+        // The backlog is about the conversation that was happening. Once it is over, an
+        // unanswered question is history, not a to-do.
+        CopilotQuestionBacklog.shared.clear()
         // A session just ended, so there's fresh speech of yours to learn from.
         CopilotStyleLearner.shared.refreshIfNeeded()
     }
@@ -181,6 +185,9 @@ final class LiveSuggestionsMonitor: ObservableObject {
         }
 
         captureStyleCorrection(in: newSegments)
+        // Before any of the gates: every path below here can decide not to raise a card,
+        // and until now each of them threw the question away along with the card.
+        recordQuestions(in: newSegments)
         prefetchNotesIfNeeded(segments: segments)
         maybeEvaluate(segments: segments)
     }
@@ -511,6 +518,11 @@ final class LiveSuggestionsMonitor: ObservableObject {
         } else {
             log("LiveSuggestionsMonitor: presenting — suppressed non-audience card (\(gateType))")
         }
+        if deliverAsCard {
+            // The card that just went up is the answer to whatever prompted it, so the
+            // backlog should not keep offering the same thing.
+            CopilotQuestionBacklog.shared.markAnsweredByCard(gateType: gateType)
+        }
         WatcherEventRouter.copilotSuggested(
             headline: result.headline, suggestion: result.suggestion)
         suggestionsThisSession.append(result.suggestion)
@@ -572,6 +584,76 @@ final class LiveSuggestionsMonitor: ObservableObject {
     }
 
     // MARK: - Manual trigger
+
+    /// Keep every question the other side aims at the user, card or no card.
+    ///
+    /// Uses the same cheap local detector the pre-gate and `.onQuestion` already run on,
+    /// so it costs nothing beyond a string scan, and a question it recognizes is exactly
+    /// the one those two would have acted on.
+    private func recordQuestions(in segments: ArraySlice<SpeakerSegment>) {
+        let vocabulary = CopilotSettings.shared.scenario.triggerVocabulary
+        for segment in segments where !segment.isUser {
+            let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            guard CopilotRealtimeGate.detectTriggerKind(text, topicVocabulary: vocabulary)
+                == .question
+            else { continue }
+            CopilotQuestionBacklog.shared.record(text)
+        }
+    }
+
+    /// Answer one question from the backlog, and only that question.
+    ///
+    /// Does not touch the per-session suggestion cap: that cap is there to stop the
+    /// copilot interrupting in a loop, and this is the user asking for one specific thing.
+    @discardableResult
+    func answerBackloggedQuestion(id: UUID) async -> [String: String] {
+        guard let question = CopilotQuestionBacklog.shared.questions.first(where: { $0.id == id })
+        else { return ["error": "question is no longer in the backlog"] }
+        guard !isEvaluating else { return ["error": "already thinking"] }
+
+        isEvaluating = true
+        defer { isEvaluating = false }
+
+        let segments = LiveTranscriptMonitor.shared.segments
+        let transcript = transcriptWindow(from: segments)
+        let profile = await AIUserProfileService.shared.getLatestProfile()?.profileText
+        let styleCard = CopilotSettings.shared.styleMatchingEnabled
+            ? CopilotStyleLearner.shared.card : nil
+
+        do {
+            let client = try cachedGeminiClient()
+            let prompt = CopilotPrompts.answerOneUserPrompt(
+                question: question.text, transcript: transcript,
+                userProfile: profile, styleCard: styleCard)
+            let responseText = try await withThrowingTimeoutCopilot(seconds: generateTimeout) {
+                try await client.sendRequest(
+                    prompt: prompt,
+                    systemPrompt: CopilotPrompts.answerOneSystemPrompt,
+                    responseSchema: CopilotPrompts.liveSuggestionSchema,
+                    thinkingBudget: 0)
+            }
+            let result = try JSONDecoder().decode(
+                CopilotLiveSuggestion.self, from: Data(responseText.utf8))
+
+            // Same second pass as the automatic lane: this line is said out loud, so it
+            // should sound like the user whichever way it was asked for.
+            var delivered = result
+            if let talkTrack = result.talkTrack, !talkTrack.isEmpty {
+                let inVoice = await CopilotStyleLearner.shared.enforce(talkTrack)
+                if inVoice != talkTrack { delivered = result.withTalkTrack(inVoice) }
+            }
+            CopilotQuestionBacklog.shared.markAnswered(id: id)
+            deliver(delivered, gateType: "question", transcript: transcript)
+            PostHogManager.shared.track(
+                "copilot_backlog_question_answered",
+                properties: ["chars": question.text.count])
+            return ["headline": delivered.headline]
+        } catch {
+            logError("LiveSuggestionsMonitor: backlog answer failed", error: error)
+            return ["error": error.localizedDescription]
+        }
+    }
 
     /// Ask for a suggestion right now, from the shortcut or omi-ctl.
     ///

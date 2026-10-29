@@ -463,6 +463,70 @@ struct CopilotLiveSuggestion: Decodable {
     }
 }
 
+// MARK: - Answering one backlogged question
+
+extension CopilotPrompts {
+    /// Answer exactly one question and nothing else.
+    ///
+    /// Separate from the live suggestion prompt because the job is the opposite shape.
+    /// That one decides *whether* there is something worth saying and picks it; this one
+    /// has already been told what to answer, and the failure mode is drifting off it —
+    /// recapping the meeting, answering the question the model finds more interesting, or
+    /// hedging because the transcript around it is ambiguous.
+    static let answerOneSystemPrompt = """
+        You are a live copilot. The user has pointed at one question the other person \
+        asked them and wants an answer to that question only.
+
+        - Answer the question you are given. Not the conversation, not what came after it, \
+        not a summary. If the transcript makes the question ambiguous, answer the most \
+        likely reading and say in a half-sentence which one you took.
+        - `talk_track` is what the user says out loud, in their own voice, first person, \
+        ready to say with no editing. No "you could say that…", no quotation marks.
+        - `headline` is at most eight words naming what the answer is.
+        - Ground it in the material you were given. Do not invent numbers, dates, names or \
+        commitments. Where you do not have the fact, the answer says so plainly — that is \
+        a usable thing to say out loud, and a fabricated specific is not.
+        """
+
+    /// The user prompt for one backlogged question.
+    @MainActor
+    static func answerOneUserPrompt(
+        question: String,
+        transcript: String,
+        userProfile: String?,
+        styleCard: String? = nil
+    ) -> String {
+        var sections: [String] = [
+            """
+            The question to answer, exactly as it was asked:
+            ---
+            \(question)
+            ---
+            """
+        ]
+        if let prep = CopilotPrepSheetStore.shared.routedPromptBlock(
+            for: CopilotSettings.shared.scenario)
+        {
+            sections.append(prep)
+        }
+        if !transcript.isEmpty {
+            sections.append(
+                "The conversation around it, for context only — do not answer any other "
+                    + "part of it:\n\(transcript)")
+        }
+        if let userProfile, !userProfile.isEmpty {
+            sections.append("What we know about the user:\n\(userProfile)")
+        }
+        if let styleCard, !styleCard.isEmpty {
+            sections.append("How the user talks, for the talk track:\n\(styleCard)")
+        }
+        if let style = CopilotAnswerStyle.liveFragment() {
+            sections.append(style)
+        }
+        return sections.joined(separator: "\n\n")
+    }
+}
+
 /// Parsed structured response from the snap call.
 struct CopilotSnapResult: Decodable {
     let intentGuess: String

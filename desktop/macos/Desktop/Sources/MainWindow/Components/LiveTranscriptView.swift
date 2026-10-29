@@ -30,11 +30,74 @@ struct LiveTranscriptPanel: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(32)
         } else {
-            LiveTranscriptView(
-                segments: displaySegments,
-                speakerNames: speakerNames,
-                onSpeakerTapped: onSpeakerTapped
-            )
+            VStack(spacing: 0) {
+                UnansweredQuestionsBar()
+                LiveTranscriptView(
+                    segments: displaySegments,
+                    speakerNames: speakerNames,
+                    onSpeakerTapped: onSpeakerTapped
+                )
+            }
+        }
+    }
+}
+
+/// Questions the other side asked that nothing answered.
+///
+/// The copilot already notices these; what it could not do was let you come back to one.
+/// Anything that stops a card — the cooldown, the per-session cap, "only when I ask for
+/// it", presentation mode — used to take the question with it, and the only way back was
+/// to retype it. Sits above the transcript because that is where you are already looking
+/// when you realise you missed something.
+private struct UnansweredQuestionsBar: View {
+    @ObservedObject private var backlog = CopilotQuestionBacklog.shared
+    @State private var answeringId: UUID?
+
+    var body: some View {
+        let pending = backlog.pending
+        if !pending.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Asked of you, unanswered")
+                    .scaledFont(size: 11, weight: .medium)
+                    .foregroundColor(OmiColors.textTertiary)
+                ForEach(pending.prefix(3)) { question in
+                    Button {
+                        answer(question)
+                    } label: {
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: answeringId == question.id
+                                ? "ellipsis.circle" : "questionmark.circle")
+                                .scaledFont(size: 11)
+                                .foregroundColor(OmiColors.textTertiary)
+                                .padding(.top, 1)
+                            Text(question.text)
+                                .scaledFont(size: 12)
+                                .foregroundColor(OmiColors.textSecondary)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(answeringId != nil)
+                    .help("Answer just this question")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(OmiColors.backgroundTertiary.opacity(0.4))
+        }
+    }
+
+    private func answer(_ question: BackloggedQuestion) {
+        guard answeringId == nil else { return }
+        answeringId = question.id
+        Task { @MainActor in
+            await LiveSuggestionsMonitor.shared.answerBackloggedQuestion(id: question.id)
+            answeringId = nil
         }
     }
 }
