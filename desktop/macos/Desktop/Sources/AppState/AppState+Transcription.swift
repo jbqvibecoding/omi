@@ -186,6 +186,7 @@ extension AppState {
       totalWordCount = 0
       liveSpeakerPersonMap = [:]
       LiveTranscriptMonitor.shared.clear()
+      MeetingMinutesEngine.shared.recordingWillStart()
       recordingStartTime = Date()
       currentBackendConversationId = nil
       pendingBackendConversationId = nil
@@ -218,6 +219,9 @@ extension AppState {
             SessionSummaryMonitor.shared.startSession(sessionId: sessionId)
             // Track which slide is up and what gets said over it
             SlideTimeline.shared.start()
+            // Live minutes, once the session turns out to be a meeting
+            MeetingMinutesEngine.shared.startSession(
+              sessionId: sessionId, speakerNames: { [weak self] in self?.liveSpeakerNames() ?? [:] })
           }
           if let backendId = await MainActor.run(body: { () -> String? in
             let candidate = self.pendingBackendConversationId ?? self.currentBackendConversationId
@@ -864,6 +868,8 @@ extension AppState {
     LiveNotesMonitor.shared.endSession()
     LiveNotesMonitor.shared.clear()
     LiveSuggestionsMonitor.shared.endSession()
+    // Before the summary monitor: its archive waits on these minutes' final pass.
+    MeetingMinutesEngine.shared.endSession(continuing: true)
     SessionSummaryMonitor.shared.endSession()
     // Rolling into the next conversation: the previous deck is over, and its slides must
     // not be attributed to what is about to be said.
@@ -1007,6 +1013,8 @@ extension AppState {
           LiveSuggestionsMonitor.shared.startSession(sessionId: sessionId)
           SessionSummaryMonitor.shared.startSession(sessionId: sessionId)
           SlideTimeline.shared.start()
+          MeetingMinutesEngine.shared.startSession(
+            sessionId: sessionId, speakerNames: { [weak self] in self?.liveSpeakerNames() ?? [:] })
         }
         if let backendId = await MainActor.run(body: { () -> String? in
           let candidate = self.pendingBackendConversationId ?? self.currentBackendConversationId
@@ -1108,6 +1116,8 @@ extension AppState {
     // End live notes session
     LiveNotesMonitor.shared.endSession()
     LiveSuggestionsMonitor.shared.endSession()
+    // Before the summary monitor: its archive waits on these minutes' final pass.
+    MeetingMinutesEngine.shared.endSession()
     SessionSummaryMonitor.shared.endSession()
     // Stopped, not reset: the summary and the export still have to read the deck.
     SlideTimeline.shared.stop()
@@ -1146,6 +1156,16 @@ extension AppState {
     currentTranscript = ""
 
     log("Transcription: Stopped")
+  }
+
+  /// The names the user gave live speakers, by speaker id — the names the transcript shows.
+  func liveSpeakerNames() -> [Int: String] {
+    let people = peopleById
+    var names: [Int: String] = [:]
+    for (speakerId, personId) in liveSpeakerPersonMap {
+      if let person = people[personId] { names[speakerId] = person.name }
+    }
+    return names
   }
 
   /// Aggressively trim transcript state to free memory (called by ResourceMonitor during critical memory pressure).

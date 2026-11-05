@@ -25,12 +25,20 @@ enum PTTContextVocabularyProvider {
     let correctedTerms = await MainActor.run {
       InsertCorrectionStore.shared.confirmedTerms()
     }
+    // The names and terms of the meeting in progress, as its minutes settled on spelling them
+    // — what you are most likely to say next when you ask omi something mid-meeting.
+    let meetingTerms = await MainActor.run {
+      MeetingMinutesEngine.shared.vocabularyTerms()
+    }
 
     var collector = KeywordCollector(limit: maxKeywords)
     for term in settingsVocabulary {
       collector.add(term)
     }
     for term in correctedTerms {
+      collector.add(term)
+    }
+    for term in meetingTerms {
       collector.add(term)
     }
 

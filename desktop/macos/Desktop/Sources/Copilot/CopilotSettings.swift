@@ -28,6 +28,13 @@ class CopilotSettings {
     private let insertModeKey = "copilotInsertMode"
     private let ambientTextEnabledKey = "copilotAmbientTextEnabled"
     private let slideTimelineEnabledKey = "copilotSlideTimelineEnabled"
+    private let minutesEnabledKey = "copilotMinutesEnabled"
+    private let minutesLanguageKey = "copilotMinutesLanguage"
+
+    /// `minutesLanguage` value: the reader's own language, from the system language list.
+    static let followSystemLanguage = "mine"
+    /// `minutesLanguage` value: whatever language the meeting itself is held in.
+    static let meetingLanguage = "source"
 
     // MARK: - Default Values
 
@@ -57,6 +64,8 @@ class CopilotSettings {
             insertModeKey: TextInsertion.InsertMode.type.rawValue,
             ambientTextEnabledKey: false,
             slideTimelineEnabledKey: false,
+            minutesEnabledKey: true,
+            minutesLanguageKey: Self.followSystemLanguage,
         ])
     }
 
@@ -257,6 +266,29 @@ class CopilotSettings {
         get { UserDefaults.standard.bool(forKey: slideTimelineEnabledKey) }
         set {
             UserDefaults.standard.set(newValue, forKey: slideTimelineEnabledKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Whether omi keeps live minutes of meetings — summary, topics, fishbone diagrams,
+    /// conclusions and to-dos, each with the words it came from. On by default; it only runs
+    /// in sessions that are meetings (a call, or the computer playing people talking), or when
+    /// asked for one.
+    var minutesEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: minutesEnabledKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: minutesEnabledKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// The language minutes are written in: `followSystemLanguage`, `meetingLanguage`, or a
+    /// translation code ("zh-CN", "en", …). Follows the system by default, so a Chinese reader
+    /// gets Chinese minutes of an English call without setting anything.
+    var minutesLanguage: String {
+        get { UserDefaults.standard.string(forKey: minutesLanguageKey) ?? Self.followSystemLanguage }
+        set {
+            UserDefaults.standard.set(newValue, forKey: minutesLanguageKey)
             NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
         }
     }

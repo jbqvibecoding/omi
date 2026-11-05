@@ -54,6 +54,13 @@ enum ConferencingApps {
         "com.webex.meetingmanager",  // Webex (older)
         "com.logmein.gotomeeting",  // GoTo Meeting
         "com.logmein.goto",  // GoTo
+        // The meeting apps most of China uses, from Cicada's list (github.com/wquguru/cicada,
+        // MicUsers.meetingApps). Without them a Tencent Meeting or Feishu call was never "a
+        // meeting" — "Only during meetings" didn't capture it and nothing minuted it.
+        "com.tencent.meeting",  // Tencent Meeting (腾讯会议)
+        "com.electron.lark",  // Feishu / Lark
+        "com.bytedance.lark",  // Feishu / Lark
+        "com.alibaba.dingtalkmac",  // DingTalk (钉钉)
     ]
 
     /// Whether a bundle ID belongs to a known native conferencing app (case-insensitive).

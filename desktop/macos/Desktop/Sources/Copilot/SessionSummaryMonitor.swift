@@ -53,15 +53,23 @@ final class SessionSummaryMonitor: ObservableObject {
     }
 
     func endSession() {
-        guard let sessionId = currentSessionId, let finalSummary = summary else {
+        // A session the live minutes engine treated as a meeting has its own, better record on
+        // the way: topics, fishbone diagrams, and conclusions and to-dos with the words they
+        // rest on. When it exists it is what gets archived — and it exists even when the
+        // copilot (and with it the running summary here) was off.
+        let liveMinutesPending = currentSessionId.map {
+            MeetingMinutesEngine.shared.hasFinalMinutes(for: $0)
+        } ?? false
+        guard let sessionId = currentSessionId, summary != nil || liveMinutesPending else {
             currentSessionId = nil
             return
         }
+        let finalSummary = summary
         // Persist the final record as one consolidated AI note (reuses NoteStorage — no
-        // schema change). Preferred content is template-driven meeting minutes shaped by
-        // the active scenario (Meetily-style, chunked for long transcripts); the live
-        // running summary is the fallback if minutes generation fails.
-        let fallbackMarkdown = finalSummary.markdown
+        // schema change). Preferred content is the live minutes' final pass; then
+        // template-driven meeting minutes shaped by the active scenario (Meetily-style,
+        // chunked for long transcripts); the live running summary is the last fallback.
+        let fallbackMarkdown = finalSummary?.markdown ?? ""
         let segments = LiveTranscriptMonitor.shared.segments.isEmpty
             ? LiveTranscriptMonitor.shared.savedSegments
             : LiveTranscriptMonitor.shared.segments
@@ -75,7 +83,16 @@ final class SessionSummaryMonitor: ObservableObject {
         Task {
             var markdown = fallbackMarkdown
             var usedMinutes = false
-            if let client, !transcript.isEmpty {
+            var usedLiveMinutes = false
+            var minutesTitle: String?
+            if liveMinutesPending,
+                let minutes = await MeetingMinutesEngine.shared.finalMinutes(for: sessionId),
+                !minutes.isEmpty
+            {
+                markdown = MinutesLogic.markdown(minutes)
+                minutesTitle = minutes.title
+                usedLiveMinutes = true
+            } else if let client, !transcript.isEmpty {
                 do {
                     let minutes = try await MeetingMinutesGenerator.generateMinutes(
                         transcript: transcript, scenarioId: scenarioId, client: client)
@@ -89,6 +106,7 @@ final class SessionSummaryMonitor: ObservableObject {
                         error: error)
                 }
             }
+            guard !markdown.isEmpty else { return }
             do {
                 _ = try await NoteStorage.shared.createNote(
                     sessionId: sessionId, text: markdown, isAiGenerated: true, segmentStartOrder: 0)
@@ -97,7 +115,7 @@ final class SessionSummaryMonitor: ObservableObject {
             }
             if exportMarkdownFile {
                 MeetingMarkdownExporter.export(
-                    title: "\(scenarioName) — \(finalSummary.overview.prefix(60))",
+                    title: "\(scenarioName) — \(minutesTitle ?? String(finalSummary?.overview.prefix(60) ?? ""))",
                     startedAt: startedAt,
                     scenarioName: scenarioName,
                     sessionId: sessionId,
@@ -111,10 +129,14 @@ final class SessionSummaryMonitor: ObservableObject {
             // supplies the attendee list — guessing names off audio is exactly how you end
             // up with a dossier on the wrong person.
             let event = await MeetingPrepService.currentEvent()
-            await DossierWriter.ingest(
-                transcript: transcript,
-                meetingTitle: event?.summary ?? scenarioName,
-                attendees: event?.attendees ?? [])
+            // Dossiers stay a copilot feature: a session archived only because the minutes
+            // engine ran (copilot off) doesn't start writing entity files.
+            if finalSummary != nil {
+                await DossierWriter.ingest(
+                    transcript: transcript,
+                    meetingTitle: event?.summary ?? scenarioName,
+                    attendees: event?.attendees ?? [])
+            }
             // Wake any watcher whose job is described in terms of what happens in meetings.
             await MainActor.run {
                 WatcherEventRouter.meetingNotesReady(
@@ -123,9 +145,10 @@ final class SessionSummaryMonitor: ObservableObject {
             PostHogManager.shared.track(
                 "copilot_session_summary_saved",
                 properties: [
-                    "key_points": finalSummary.keyPoints.count,
-                    "action_items": finalSummary.actionItems.count,
+                    "key_points": finalSummary?.keyPoints.count ?? 0,
+                    "action_items": finalSummary?.actionItems.count ?? 0,
                     "minutes_template": usedMinutes,
+                    "live_minutes": usedLiveMinutes,
                     "transcript_chars": transcript.count,
                 ]
             )

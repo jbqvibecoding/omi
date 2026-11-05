@@ -369,6 +369,39 @@ final class CopilotOrchestrator {
         }
 
         DesktopAutomationActionRegistry.shared.register(
+            name: "minutes_dump",
+            summary: "Show the live meeting minutes: whether this session counts as a meeting "
+                + "(and why), lines read, topics, items without a source, terms."
+        ) { _ in
+            await MainActor.run { MeetingMinutesEngine.shared.debugDump() }
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
+            name: "minutes_update_now",
+            summary: "Update the live minutes now instead of at the next 45-second mark. Treats "
+                + "the session as a meeting if nothing else has yet."
+        ) { _ in
+            await MainActor.run { () -> [String: String] in
+                MeetingMinutesEngine.shared.updateNow()
+                return ["requested": "true"]
+            }
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
+            name: "minutes_replay",
+            summary: "Rebuild a finished session's minutes from its saved transcript, a few "
+                + "lines at a time and then the final pass, to check topics stay stable. "
+                + "session=<id> (required), step=<lines per update, default 6>.",
+            params: ["session", "step"]
+        ) { params in
+            guard let raw = params["session"], let id = Int64(raw) else {
+                return ["error": "pass session=<id>"]
+            }
+            let step = params["step"].flatMap { Int($0) } ?? 6
+            return await MeetingMinutesEngine.shared.replay(sessionId: id, step: step)
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
             name: "copilot_ambient_dump",
             summary: "Show what ambient text context has captured: entries held, how many "
                 + "carry a real URL, and the latest app. Pass clear=1 to forget it all.",

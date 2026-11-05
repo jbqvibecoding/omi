@@ -128,6 +128,10 @@ extension SettingsContentView {
                 }
             }
 
+            settingsCard(settingId: "copilot.minutes") {
+                CopilotMinutesRow()
+            }
+
             settingsCard(settingId: "copilot.ambient") {
                 CopilotAmbientContextRow()
             }
@@ -564,6 +568,74 @@ private struct CopilotTriggerPolicyRow: View {
             .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
         }
         .onAppear { policy = CopilotSettings.shared.triggerPolicy }
+    }
+}
+
+/// Live meeting minutes — summary, topics, fishbone diagrams, and conclusions and to-dos that
+/// each show the words they came from.
+///
+/// Says when it runs, because "on by default" for something that calls a model every 45
+/// seconds needs the other half of the sentence: only in meetings.
+private struct CopilotMinutesRow: View {
+    @State private var enabled = true
+    @State private var language = CopilotSettings.followSystemLanguage
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "list.bullet.rectangle").scaledFont(size: 16)
+                    .foregroundColor(OmiColors.textTertiary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Live meeting minutes").scaledFont(size: 16, weight: .semibold)
+                        .foregroundColor(OmiColors.textPrimary)
+                    Text(
+                        "A summary, topics and fishbone diagrams, updated every 45 seconds. Every "
+                            + "conclusion and to-do shows who said it and when, and jumps to the line."
+                    )
+                    .scaledFont(size: 13).foregroundColor(OmiColors.textSecondary)
+                }
+                Spacer()
+                Toggle("", isOn: $enabled).toggleStyle(.switch).labelsHidden()
+                    .onChange(of: enabled) { _, value in
+                        CopilotSettings.shared.minutesEnabled = value
+                    }
+            }
+
+            if enabled {
+                HStack {
+                    Text("Write minutes in").scaledFont(size: 13)
+                        .foregroundColor(OmiColors.textSecondary)
+                    Spacer()
+                    Picker("", selection: $language) {
+                        Text("My language (\(MeetingLanguages.displayName(MeetingLanguages.myLanguage())))")
+                            .tag(CopilotSettings.followSystemLanguage)
+                        Text("The meeting's language").tag(CopilotSettings.meetingLanguage)
+                        Divider()
+                        ForEach(MeetingLanguages.readable) { option in
+                            Text(option.name).tag(option.code)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 220)
+                    .onChange(of: language) { _, value in
+                        guard value != CopilotSettings.shared.minutesLanguage else { return }
+                        CopilotSettings.shared.minutesLanguage = value
+                        // A meeting in progress is rewritten in the new language right away.
+                        MeetingMinutesEngine.shared.languageChanged()
+                    }
+                }
+                Text(
+                    "Runs on its own in calls (Zoom, Teams, Meet, Tencent Meeting, Feishu…) and when "
+                        + "your Mac plays people talking. For an in-person meeting, start it from the "
+                        + "Minutes tab while recording."
+                )
+                .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+            }
+        }
+        .onAppear {
+            enabled = CopilotSettings.shared.minutesEnabled
+            language = CopilotSettings.shared.minutesLanguage
+        }
     }
 }
 

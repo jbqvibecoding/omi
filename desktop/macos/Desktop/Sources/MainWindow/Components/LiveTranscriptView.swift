@@ -173,6 +173,14 @@ struct LiveTranscriptView: View {
     var speakerNames: [Int: String] = [:]
     var onSpeakerTapped: ((SpeakerSegment) -> Void)? = nil
 
+    /// Jumps asked for by the minutes ("go to what was said").
+    @ObservedObject private var jumps = TranscriptJumpCenter.shared
+    /// The line a jump landed on, lit up for a moment so the eye finds it.
+    @State private var highlightedId: String?
+    /// After a jump the transcript stops following new lines, or the next one would yank the
+    /// reader straight back to the bottom.
+    @State private var followPaused = false
+
     /// Format timestamp as MM:SS
     private func formatTime(_ seconds: Double) -> String {
         let totalSeconds = Int(seconds)
@@ -196,8 +204,10 @@ struct LiveTranscriptView: View {
                             segment: segment,
                             formatTime: formatTime,
                             personName: speakerNames[segment.speaker],
-                            onSpeakerTapped: !segment.isUser ? { onSpeakerTapped?(segment) } : nil
+                            onSpeakerTapped: !segment.isUser ? { onSpeakerTapped?(segment) } : nil,
+                            highlighted: highlightedId == segment.id
                         )
+                        .id(segment.id)
                     }
 
                     // Stable bottom anchor that never changes ID
@@ -209,9 +219,53 @@ struct LiveTranscriptView: View {
             }
             .defaultScrollAnchor(.bottom)
             .onChange(of: scrollTrigger) { _, _ in
+                guard !followPaused else { return }
                 proxy.scrollTo("transcript-bottom", anchor: .bottom)
             }
+            .onChange(of: jumps.request) { _, request in
+                guard let request, let target = jumpTarget(for: request) else { return }
+                followPaused = true
+                withAnimation(.easeOut(duration: 0.25)) {
+                    proxy.scrollTo(target, anchor: .center)
+                }
+                highlightedId = target
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+                    if highlightedId == target { highlightedId = nil }
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if followPaused {
+                    Button {
+                        followPaused = false
+                        proxy.scrollTo("transcript-bottom", anchor: .bottom)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.down")
+                                .scaledFont(size: 11, weight: .bold)
+                            Text("Back to latest")
+                                .scaledFont(size: 12, weight: .semibold)
+                        }
+                        .foregroundColor(OmiColors.backgroundPrimary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .background(Capsule().fill(OmiColors.textPrimary))
+                        .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, 12)
+                }
+            }
         }
+    }
+
+    /// The row a jump should land on: the line itself, or — when it has already left the
+    /// in-memory window — the first line said at or after that moment. Nothing when that
+    /// moment is older than everything still loaded: landing on an unrelated line is worse
+    /// than staying put (the minutes show the words either way).
+    private func jumpTarget(for request: TranscriptJumpCenter.Request) -> String? {
+        if segments.contains(where: { $0.id == request.lineId }) { return request.lineId }
+        guard let first = segments.first, request.t >= first.start - 1 else { return nil }
+        return segments.first(where: { $0.start >= request.t - 1 })?.id
     }
 }
 
@@ -221,6 +275,8 @@ private struct LiveSegmentView: View {
     let formatTime: (Double) -> String
     var personName: String? = nil
     var onSpeakerTapped: (() -> Void)? = nil
+    /// Just jumped to from the minutes.
+    var highlighted: Bool = false
 
     @State private var isHovered = false
 
@@ -309,6 +365,11 @@ private struct LiveSegmentView: View {
                 .background(
                     RoundedRectangle(cornerRadius: 16)
                         .fill(bubbleColor)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(OmiColors.textPrimary.opacity(highlighted ? 0.8 : 0), lineWidth: 1.5)
+                        .animation(.easeOut(duration: 0.3), value: highlighted)
                 )
 
             // Translations from backend
