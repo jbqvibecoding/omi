@@ -202,6 +202,11 @@ extension AppState {
       SubtitleController.shared.onRoutingNeedsRefresh = { [weak self] in
         self?.refreshSystemTranscriberForSubtitles()
       }
+      // A minuted meeting that hangs up (or goes quiet) is finished like "finish and continue":
+      // final minutes and archive for it, and recording carries on into the next one.
+      MeetingEndMonitor.shared.onEnd = { [weak self] in
+        _ = await self?.finishConversation()
+      }
       recordingStartTime = Date()
       currentBackendConversationId = nil
       pendingBackendConversationId = nil
@@ -1139,6 +1144,7 @@ extension AppState {
     // Before the summary monitor: its archive waits on these minutes' final pass.
     MeetingMinutesEngine.shared.endSession()
     SubtitleController.shared.recordingStopped()
+    MeetingEndMonitor.shared.onEnd = nil
     SessionSummaryMonitor.shared.endSession()
     // Stopped, not reset: the summary and the export still have to read the deck.
     SlideTimeline.shared.stop()

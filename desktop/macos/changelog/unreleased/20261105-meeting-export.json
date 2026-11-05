@@ -1,0 +1,3 @@
+{
+    "change": "Added exporting a meeting from the Minutes tab as Markdown or bilingual SRT subtitles, and saved meeting notes now include the whole transcript with each translation under its line"
+}

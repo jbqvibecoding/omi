@@ -730,6 +730,8 @@ private struct CopilotSubtitlesRow: View {
 private struct CopilotMinutesRow: View {
     @State private var enabled = true
     @State private var language = CopilotSettings.followSystemLanguage
+    @State private var endOnHangUp = true
+    @State private var endOnSilence = "prompt"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -781,11 +783,37 @@ private struct CopilotMinutesRow: View {
                         + "Minutes tab while recording."
                 )
                 .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("End the meeting when the call hangs up").scaledFont(size: 13)
+                            .foregroundColor(OmiColors.textSecondary)
+                        Text("30 seconds after the meeting app lets go of the microphone; recording carries on into the next conversation.")
+                            .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $endOnHangUp).toggleStyle(.switch).labelsHidden()
+                        .onChange(of: endOnHangUp) { _, value in CopilotSettings.shared.endMeetingOnHangUp = value }
+                }
+                HStack {
+                    Text("When nobody talks for 10 minutes").scaledFont(size: 13)
+                        .foregroundColor(OmiColors.textSecondary)
+                    Spacer()
+                    Picker("", selection: $endOnSilence) {
+                        Text("Ask, then end in a minute").tag("prompt")
+                        Text("End the meeting").tag("end")
+                        Text("Keep recording").tag("off")
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 220)
+                    .onChange(of: endOnSilence) { _, value in CopilotSettings.shared.endMeetingOnSilence = value }
+                }
             }
         }
         .onAppear {
             enabled = CopilotSettings.shared.minutesEnabled
             language = CopilotSettings.shared.minutesLanguage
+            endOnHangUp = CopilotSettings.shared.endMeetingOnHangUp
+            endOnSilence = CopilotSettings.shared.endMeetingOnSilence
         }
     }
 }

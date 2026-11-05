@@ -388,6 +388,25 @@ final class CopilotOrchestrator {
         }
 
         DesktopAutomationActionRegistry.shared.register(
+            name: "meeting_end_dump",
+            summary: "Show the meeting-end watch: whether it is watching this session, the "
+                + "meeting apps seen in a call, the countdown (if any), and the settings."
+        ) { _ in
+            await MainActor.run { MeetingEndMonitor.shared.debugDump() }
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
+            name: "meeting_end_soon",
+            summary: "Start the \"nobody has spoken\" countdown now, as if the meeting had gone "
+                + "quiet for 10 minutes. seconds=<countdown, default 20>. The session must be "
+                + "minuted (minutes_update_now makes it one).",
+            params: ["seconds"]
+        ) { params in
+            let seconds = params["seconds"].flatMap { Double($0) } ?? 20
+            return await MainActor.run { MeetingEndMonitor.shared.debugEndSoon(in: seconds) }
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
             name: "subtitles_dump",
             summary: "Show the live subtitles: lines seen, translated and waiting, the line in "
                 + "progress, the target language, the bar's state, and the shared model budget."

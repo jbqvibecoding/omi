@@ -24,11 +24,45 @@ enum MeetingMarkdownExporter {
         /// read here so this stays a pure function of its arguments.
         deckMarkdown: String? = nil
     ) -> URL? {
+        guard
+            let content = render(
+                title: title, startedAt: startedAt, scenarioName: scenarioName, sessionId: sessionId,
+                segments: segments, notesMarkdown: notesMarkdown, deckMarkdown: deckMarkdown)
+        else { return nil }
+
+        let fm = FileManager.default
+        do {
+            try fm.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+            let fileURL = availableFileURL(title: title, startedAt: startedAt)
+            try content.write(to: fileURL, atomically: true, encoding: .utf8)
+            log("MeetingMarkdownExporter: wrote \(fileURL.path)")
+            return fileURL
+        } catch {
+            logError("MeetingMarkdownExporter: export failed", error: error)
+            return nil
+        }
+    }
+
+    /// The export's content, or nil when there is nothing to write. The transcript is
+    /// bilingual where subtitles translated it: each line, then its translation quoted under it.
+    static func render(
+        title: String,
+        startedAt: Date,
+        scenarioName: String?,
+        sessionId: Int64?,
+        segments: [SpeakerSegment],
+        notesMarkdown: String?,
+        deckMarkdown: String? = nil
+    ) -> String? {
         let transcriptLines = segments.compactMap { segment -> String? in
             let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { return nil }
             let speaker = segment.isUser ? "You" : "Speaker \(segment.speaker)"
-            return "[\(timestamp(segment.start))] \(speaker): \(text)"
+            var line = "[\(timestamp(segment.start))] \(speaker): \(text)"
+            if let translation = MeetingExport.translation(of: segment) {
+                line += "\n> \(translation)"
+            }
+            return line
         }
         guard !transcriptLines.isEmpty || !(notesMarkdown ?? "").isEmpty
             || !(deckMarkdown ?? "").isEmpty
@@ -70,29 +104,22 @@ enum MeetingMarkdownExporter {
             lines.append(contentsOf: transcriptLines)
             lines.append("")
         }
-        let content = lines.joined(separator: "\n")
-
-        let fm = FileManager.default
-        do {
-            try fm.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
-            let fileURL = availableFileURL(title: title, startedAt: startedAt)
-            try content.write(to: fileURL, atomically: true, encoding: .utf8)
-            log("MeetingMarkdownExporter: wrote \(fileURL.path)")
-            return fileURL
-        } catch {
-            logError("MeetingMarkdownExporter: export failed", error: error)
-            return nil
-        }
+        return lines.joined(separator: "\n")
     }
 
     // MARK: - Helpers
 
-    /// `YYYY-MM-DD-HHMM-<slug>.md`, with `-2`, `-3`… on collision.
-    private static func availableFileURL(title: String, startedAt: Date) -> URL {
+    /// `YYYY-MM-DD-HHMM-<slug>`, the name an export of this meeting starts with.
+    static func fileBaseName(title: String, startedAt: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd-HHmm"
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        let base = "\(formatter.string(from: startedAt))-\(slug(title))"
+        return "\(formatter.string(from: startedAt))-\(slug(title))"
+    }
+
+    /// `YYYY-MM-DD-HHMM-<slug>.md`, with `-2`, `-3`… on collision.
+    private static func availableFileURL(title: String, startedAt: Date) -> URL {
+        let base = fileBaseName(title: title, startedAt: startedAt)
 
         let fm = FileManager.default
         var candidate = outputDirectory.appendingPathComponent("\(base).md")

@@ -1,0 +1,3 @@
+{
+    "change": "Meetings now end on their own a short while after the call hangs up, or after 10 minutes with nobody talking, so the next video or call doesn't run into the minutes; recording carries on and both can be turned off in Settings"
+}

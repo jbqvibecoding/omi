@@ -39,6 +39,8 @@ class CopilotSettings {
     private let interpreterMicKey = "copilotInterpreterMic"
     private let interpreterOutputKey = "copilotInterpreterOutput"
     private let interpreterVoicesKey = "copilotInterpreterVoices"
+    private let endMeetingOnHangUpKey = "copilotEndMeetingOnHangUp"
+    private let endMeetingOnSilenceKey = "copilotEndMeetingOnSilence"
 
     /// `minutesLanguage` value: the reader's own language, from the system language list.
     static let followSystemLanguage = "mine"
@@ -81,6 +83,8 @@ class CopilotSettings {
             interpreterEnabledKey: false,
             interpreterFromKey: Self.followSystemLanguage,
             interpreterToKey: Self.meetingLanguage,
+            endMeetingOnHangUpKey: true,
+            endMeetingOnSilenceKey: "prompt",
         ])
     }
 
@@ -382,6 +386,19 @@ class CopilotSettings {
         var voices = UserDefaults.standard.dictionary(forKey: interpreterVoicesKey) as? [String: String] ?? [:]
         voices[MeetingLanguages.base(language)] = id
         UserDefaults.standard.set(voices, forKey: interpreterVoicesKey)
+    }
+
+    /// Whether a minuted meeting ends by itself when its meeting app hangs up (after a 30-second
+    /// grace for a device switch). Ending means "finish this conversation and keep recording".
+    var endMeetingOnHangUp: Bool {
+        get { UserDefaults.standard.bool(forKey: endMeetingOnHangUpKey) }
+        set { UserDefaults.standard.set(newValue, forKey: endMeetingOnHangUpKey) }
+    }
+
+    /// After 10 minutes with no words: "prompt" (end in 60 s unless kept going), "end", or "off".
+    var endMeetingOnSilence: String {
+        get { UserDefaults.standard.string(forKey: endMeetingOnSilenceKey) ?? "prompt" }
+        set { UserDefaults.standard.set(newValue, forKey: endMeetingOnSilenceKey) }
     }
 
     /// Whether omi keeps entity files (people, orgs, projects, topics) from your meetings.

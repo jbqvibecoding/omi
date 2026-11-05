@@ -155,6 +155,7 @@ final class MeetingMinutesEngine: ObservableObject {
         lines = []
         lineIndex = [:]
         accepting = continuing
+        MeetingEndMonitor.shared.end()
         guard let id = sessionId else {
             state = .idle
             return
@@ -226,17 +227,24 @@ final class MeetingMinutesEngine: ObservableObject {
 
     private func ingest(_ segments: [SpeakerSegment]) {
         guard accepting else { return }
+        var heardWords = false
+        defer {
+            // Words, not sound, keep a meeting alive (MeetingEndWatch).
+            if heardWords { MeetingEndMonitor.shared.heard() }
+        }
         for segment in segments {
             let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { continue }
             if let i = lineIndex[segment.id] {
                 // Transcription revises itself: the same segment comes back with words fixed,
                 // or a speaker the backend has now told apart.
+                if lines[i].text != text { heardWords = true }
                 lines[i].text = text
                 lines[i].t = segment.start
                 lines[i].speakerId = segment.speaker
                 lines[i].isUser = segment.isUser
             } else {
+                heardWords = true
                 lineIndex[segment.id] = lines.count
                 lines.append(
                     MinutesLine(
@@ -290,6 +298,8 @@ final class MeetingMinutesEngine: ObservableObject {
             // The 20-second first-version clock starts now, not when recording started.
             lastAttempt = Date()
             state = .ready
+            // A meeting can end on its own: a hang-up, or a long silence.
+            MeetingEndMonitor.shared.begin()
             log("MeetingMinutes: session \(sessionId ?? -1) is a meeting (\(trigger.rawValue)), minuting \(lines.count) lines")
         }
     }

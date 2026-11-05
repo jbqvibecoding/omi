@@ -88,10 +88,14 @@ struct RecordingSidePanel: View {
 /// rewritten once from the whole transcript when it ends.
 struct MeetingMinutesPanel: View {
     @ObservedObject private var engine = MeetingMinutesEngine.shared
+    @ObservedObject private var ending = MeetingEndMonitor.shared
 
     var body: some View {
         VStack(spacing: 0) {
             statusLine
+            if let pending = ending.pending {
+                MeetingEndingStrip(pending: pending)
+            }
             if engine.minutes.isEmpty {
                 emptyState
             } else {
@@ -122,7 +126,9 @@ struct MeetingMinutesPanel: View {
     @ViewBuilder
     private var statusLine: some View {
         let text = statusText
-        if !text.isEmpty {
+        // A meeting with minutes can always be exported, even when there's nothing to report.
+        let canExport = !engine.minutes.isEmpty && engine.shownSessionId != nil
+        if !text.isEmpty || canExport {
             HStack(spacing: 6) {
                 if engine.state == .updating || engine.finalizing {
                     ProgressView().controlSize(.mini)
@@ -134,6 +140,24 @@ struct MeetingMinutesPanel: View {
                     .foregroundColor(OmiColors.textTertiary)
                     .lineLimit(1)
                 Spacer(minLength: 4)
+                if canExport {
+                    Menu {
+                        Button("Markdown (minutes + transcript)…") {
+                            Task { await MeetingExport.exportShownSession(.markdown) }
+                        }
+                        Button("Subtitles (.srt, bilingual)…") {
+                            Task { await MeetingExport.exportShownSession(.srt) }
+                        }
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .scaledFont(size: 10, weight: .semibold)
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("Export this meeting")
+                }
                 if engine.isLive, engine.trigger != nil, engine.state != .updating {
                     Button {
                         engine.updateNow()
@@ -216,6 +240,64 @@ struct MeetingMinutesPanel: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// "Zoom hung up — ending in 0:24": the meeting is about to end by itself, with the two ways out.
+private struct MeetingEndingStrip: View {
+    let pending: MeetingEndWatch.Pending
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let left = max(0, Int(pending.deadline.timeIntervalSince(context.date).rounded()))
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .scaledFont(size: 12, weight: .semibold)
+                        .foregroundColor(OmiColors.textPrimary)
+                    Text("The meeting ends in \(left / 60):\(String(format: "%02d", left % 60)) — minutes are finished and the next conversation starts")
+                        .scaledFont(size: 11)
+                        .monospacedDigit()
+                        .foregroundColor(OmiColors.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 4)
+                Button {
+                    MeetingEndMonitor.shared.keepGoing()
+                } label: {
+                    Text("Keep recording")
+                        .scaledFont(size: 11, weight: .semibold)
+                        .foregroundColor(OmiColors.backgroundPrimary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(OmiColors.textPrimary))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                Button {
+                    MeetingEndMonitor.shared.endNow()
+                } label: {
+                    Text("End now")
+                        .scaledFont(size: 11)
+                        .foregroundColor(OmiColors.textSecondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(OmiColors.backgroundTertiary)
+        }
+    }
+
+    private var title: String {
+        switch pending.reason {
+        case .appLeft(let name): return "\(name.isEmpty ? "The call" : name) hung up"
+        case .silence: return "Nobody has spoken for 10 minutes"
+        case .nobodySpoke: return "Nothing has been said"
+        }
     }
 }
 

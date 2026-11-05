@@ -92,10 +92,17 @@ final class SessionSummaryMonitor: ObservableObject {
                 markdown = MinutesLogic.markdown(minutes)
                 minutesTitle = minutes.title
                 usedLiveMinutes = true
-            } else if let client, !transcript.isEmpty {
+            }
+            // The whole conversation, translations included, from the store: the transcript in
+            // memory keeps only the last 200 segments, which cuts off any long meeting. Read after
+            // the minutes' final pass, by which time the last segments have been written.
+            let stored = await MeetingExport.storedSegments(sessionId: sessionId)
+            let fullSegments = stored.isEmpty ? segments : stored
+            let fullText = stored.isEmpty ? transcript : self.fullTranscript(from: stored)
+            if !usedLiveMinutes, let client, !fullText.isEmpty {
                 do {
                     let minutes = try await MeetingMinutesGenerator.generateMinutes(
-                        transcript: transcript, scenarioId: scenarioId, client: client)
+                        transcript: fullText, scenarioId: scenarioId, client: client)
                     if !minutes.isEmpty {
                         markdown = minutes
                         usedMinutes = true
@@ -119,7 +126,7 @@ final class SessionSummaryMonitor: ObservableObject {
                     startedAt: startedAt,
                     scenarioName: scenarioName,
                     sessionId: sessionId,
-                    segments: segments,
+                    segments: fullSegments,
                     notesMarkdown: markdown,
                     deckMarkdown: SlideTimeline.shared.markdownSection()
                 )
@@ -133,7 +140,7 @@ final class SessionSummaryMonitor: ObservableObject {
             // engine ran (copilot off) doesn't start writing entity files.
             if finalSummary != nil {
                 await DossierWriter.ingest(
-                    transcript: transcript,
+                    transcript: fullText,
                     meetingTitle: event?.summary ?? scenarioName,
                     attendees: event?.attendees ?? [])
             }
@@ -149,7 +156,7 @@ final class SessionSummaryMonitor: ObservableObject {
                     "action_items": finalSummary?.actionItems.count ?? 0,
                     "minutes_template": usedMinutes,
                     "live_minutes": usedLiveMinutes,
-                    "transcript_chars": transcript.count,
+                    "transcript_chars": fullText.count,
                 ]
             )
         }
