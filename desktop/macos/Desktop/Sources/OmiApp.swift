@@ -555,6 +555,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // Register the copilot_snap automation action for headless testing via omi-ctl
     Task { @MainActor in
       CopilotOrchestrator.shared.setup()
+      // Simultaneous interpretation: restore its talk key, or undo a system-microphone switch
+      // an earlier run left behind.
+      InterpreterController.shared.appDidLaunch()
     }
 
     // Ensure app always shows in dock as a regular app
@@ -1284,6 +1287,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   }
 
   func applicationWillTerminate(_ notification: Notification) {
+    // Give the system its microphone back if the interpreter switched it to the virtual mic.
+    MainActor.assumeIsolated { InterpreterController.shared.appWillTerminate() }
     // Mark clean exit so crash detection works on next launch
     UserDefaults.standard.set(true, forKey: "lastSessionCleanExit")
 

@@ -18,36 +18,6 @@
   // one recognizer per channel, and only the other side's detects the language; an unsupported
   // language or a recognizer that keeps failing hands the session back to the cloud.
 
-  /// Stateful sample-rate / sample-format converter.
-  @available(macOS 26.0, *)
-  final class SpeechPCMConverter {
-    private var converter: AVAudioConverter?
-
-    func convert(_ input: AVAudioPCMBuffer, to format: AVAudioFormat) -> AVAudioPCMBuffer? {
-      if input.format == format { return input }
-      if converter == nil || converter!.inputFormat != input.format || converter!.outputFormat != format {
-        converter = AVAudioConverter(from: input.format, to: format)
-      }
-      guard let converter else { return nil }
-      let ratio = format.sampleRate / input.format.sampleRate
-      let capacity = AVAudioFrameCount(Double(input.frameLength) * ratio) + 64
-      guard let out = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else { return nil }
-      var consumed = false
-      var error: NSError?
-      let status = converter.convert(to: out, error: &error) { _, outStatus in
-        if consumed {
-          outStatus.pointee = .noDataNow
-          return nil
-        }
-        consumed = true
-        outStatus.pointee = .haveData
-        return input
-      }
-      if status == .error || out.frameLength == 0 { return nil }
-      return out
-    }
-  }
-
   /// Moves capture chunks off the capture thread, converts them for the analyzer, feeds it, and
   /// keeps a short ring for language detection and replay.
   @available(macOS 26.0, *)
@@ -63,7 +33,7 @@
     static let gapSeconds = 1.5
 
     private let queue = DispatchQueue(label: "com.omi.speech-router", qos: .userInitiated)
-    private let converter = SpeechPCMConverter()
+    private let converter = PCMBufferConverter()
     private let inputFormat = AVAudioFormat(
       commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
     private var format: AVAudioFormat?
@@ -233,7 +203,7 @@
       guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
         return nil
       }
-      let converter = SpeechPCMConverter()
+      let converter = PCMBufferConverter()
       let (stream, continuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
       for buffer in clip {
         if let b = converter.convert(buffer, to: format) { continuation.yield(AnalyzerInput(buffer: b)) }

@@ -178,7 +178,13 @@ class PushToTalkManager: ObservableObject {
     switch event.type {
     case .flagsChanged:
       guard shortcut.modifierOnly else { return }
-      pttActive = shortcut.matchesFlagsChanged(event)
+      // While interpretation is on, right ⌥ alone belongs to the interpreter (it talks to the
+      // meeting); left ⌥ still asks omi. Treated as "not pressed" rather than ignored, so a press
+      // that slides from left to right still lets push-to-talk go.
+      let claimed = shortcut.modifiers == [.option]
+        && InterpretKeyMonitor.claims(
+          event.modifierFlags, interpreterOn: CopilotSettings.shared.interpreterEnabled)
+      pttActive = !claimed && shortcut.matchesFlagsChanged(event)
     case .keyDown:
       guard !shortcut.modifierOnly, !event.isARepeat else { return }
       pttActive = shortcut.matchesKeyDown(event)

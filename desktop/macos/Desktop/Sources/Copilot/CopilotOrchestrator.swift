@@ -409,6 +409,24 @@ final class CopilotOrchestrator {
         }
 
         DesktopAutomationActionRegistry.shared.register(
+            name: "interpreter_dump",
+            summary: "Show the interpreter: virtual mic, system microphone switch, which mic it "
+                + "records from and which device it speaks into, languages, voice, the last sentence."
+        ) { _ in
+            await MainActor.run { InterpreterController.shared.debugDump() }
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
+            name: "interpreter_say",
+            summary: "Translate a sentence and speak it into the virtual mic as if you had said it "
+                + "with right ⌥ held. text=<what you said>.",
+            params: ["text"]
+        ) { params in
+            guard let text = params["text"], !text.isEmpty else { return ["error": "pass text=<sentence>"] }
+            return await InterpretEngine.shared.debugSay(text)
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
             name: "minutes_replay",
             summary: "Rebuild a finished session's minutes from its saved transcript, a few "
                 + "lines at a time and then the final pass, to check topics stay stable. "

@@ -404,7 +404,11 @@ class AudioCaptureService: @unchecked Sendable {
         )
 
         guard status == noErr, isAvailableInputDevice(deviceID) else { return nil }
-        return deviceID
+        // While the interpreter has made the virtual mic (BlackHole) the default input, keep
+        // recording the real one: following the default there would transcribe omi's own
+        // translated voice as "you" and drop yours.
+        let real = AudioDevices.realInput(replacing: deviceID)
+        return real != deviceID && isAvailableInputDevice(real) ? real : deviceID
     }
 
     private static func isAvailableInputDevice(_ deviceID: AudioDeviceID) -> Bool {

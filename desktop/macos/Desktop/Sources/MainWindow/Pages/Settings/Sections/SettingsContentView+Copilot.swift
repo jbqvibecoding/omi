@@ -140,6 +140,10 @@ extension SettingsContentView {
                 CopilotSubtitlesRow()
             }
 
+            settingsCard(settingId: "copilot.interpreter") {
+                InterpreterSettingsCard()
+            }
+
             settingsCard(settingId: "copilot.ambient") {
                 CopilotAmbientContextRow()
             }

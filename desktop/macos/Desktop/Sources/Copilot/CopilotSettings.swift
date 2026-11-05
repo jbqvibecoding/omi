@@ -33,6 +33,12 @@ class CopilotSettings {
     private let subtitlesEnabledKey = "copilotSubtitlesEnabled"
     private let subtitleLanguageKey = "copilotSubtitleLanguage"
     private let subtitlesVisibleInScreenShareKey = "copilotSubtitlesVisibleInScreenShare"
+    private let interpreterEnabledKey = "copilotInterpreterEnabled"
+    private let interpreterFromKey = "copilotInterpreterFrom"
+    private let interpreterToKey = "copilotInterpreterTo"
+    private let interpreterMicKey = "copilotInterpreterMic"
+    private let interpreterOutputKey = "copilotInterpreterOutput"
+    private let interpreterVoicesKey = "copilotInterpreterVoices"
 
     /// `minutesLanguage` value: the reader's own language, from the system language list.
     static let followSystemLanguage = "mine"
@@ -72,6 +78,9 @@ class CopilotSettings {
             subtitlesEnabledKey: false,
             subtitleLanguageKey: Self.followSystemLanguage,
             subtitlesVisibleInScreenShareKey: false,
+            interpreterEnabledKey: false,
+            interpreterFromKey: Self.followSystemLanguage,
+            interpreterToKey: Self.meetingLanguage,
         ])
     }
 
@@ -326,6 +335,53 @@ class CopilotSettings {
             UserDefaults.standard.set(newValue, forKey: subtitlesVisibleInScreenShareKey)
             NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
         }
+    }
+
+    /// Simultaneous interpretation: hold right ⌥, speak, and the meeting hears the translation
+    /// through the virtual microphone.
+    var interpreterEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: interpreterEnabledKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: interpreterEnabledKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// The language you speak: `followSystemLanguage` or a translation code.
+    var interpreterFromLanguage: String {
+        get { UserDefaults.standard.string(forKey: interpreterFromKey) ?? Self.followSystemLanguage }
+        set { UserDefaults.standard.set(newValue, forKey: interpreterFromKey) }
+    }
+
+    /// The language the other side hears: `meetingLanguage` (whatever they speak) or a code.
+    var interpreterToLanguage: String {
+        get { UserDefaults.standard.string(forKey: interpreterToKey) ?? Self.meetingLanguage }
+        set { UserDefaults.standard.set(newValue, forKey: interpreterToKey) }
+    }
+
+    /// The real microphone the interpreter records from (a device UID; "" = the one the system
+    /// default was before the switch).
+    var interpreterMicUID: String {
+        get { UserDefaults.standard.string(forKey: interpreterMicKey) ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: interpreterMicKey) }
+    }
+
+    /// Where the interpreter speaks (a device UID; "" = the virtual microphone).
+    var interpreterOutputUID: String {
+        get { UserDefaults.standard.string(forKey: interpreterOutputKey) ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: interpreterOutputKey) }
+    }
+
+    /// The voice chosen for a language ("" = the default for it).
+    func interpreterVoiceID(for language: String) -> String {
+        let voices = UserDefaults.standard.dictionary(forKey: interpreterVoicesKey) as? [String: String] ?? [:]
+        return voices[MeetingLanguages.base(language)] ?? ""
+    }
+
+    func setInterpreterVoiceID(_ id: String, for language: String) {
+        var voices = UserDefaults.standard.dictionary(forKey: interpreterVoicesKey) as? [String: String] ?? [:]
+        voices[MeetingLanguages.base(language)] = id
+        UserDefaults.standard.set(voices, forKey: interpreterVoicesKey)
     }
 
     /// Whether omi keeps entity files (people, orgs, projects, topics) from your meetings.
