@@ -251,6 +251,9 @@ extension AppState {
           return segmentIds.contains(segId)
         }
         LiveTranscriptMonitor.shared.updateSegments(speakerSegments)
+        // The minutes keep their own full copy of the transcript; a deleted line must stop
+        // counting as something someone said.
+        MeetingMinutesEngine.shared.markDeleted(lineIds: segmentIds)
 
         // Also remove from DB
         if let sessionId = currentSessionId {

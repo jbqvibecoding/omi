@@ -331,6 +331,7 @@ struct SettingsSidebar: View {
     .privacy,
     .account,
     .planUsage,
+    .copilot,
     .floatingBar,
     .shortcuts,
     .advanced,
@@ -516,6 +517,7 @@ struct SettingsSidebarItem: View {
     case .account: return "person.circle"
     case .planUsage: return "creditcard"
     case .aiChat: return "cpu"
+    case .copilot: return "sparkles"
     case .floatingBar: return "sparkles"
     case .shortcuts: return "keyboard"
     case .advanced: return "chart.bar"

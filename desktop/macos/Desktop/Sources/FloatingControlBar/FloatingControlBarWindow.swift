@@ -322,6 +322,10 @@ class FloatingControlBarWindow: NSPanel, NSWindowDelegate {
             ? .statusBar
             : .floating
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        // Stealth: exclude the copilot HUD from screen recordings / shares when enabled
+        // (the "invisible copilot" property). Applied here at init and refreshed when
+        // the setting changes via FloatingControlBarManager.
+        StealthWindowController.applyCurrentStealthPreference(to: self)
         self.isMovableByWindowBackground = false
         self.acceptsMouseMovedEvents = true
         self.delegate = self
@@ -2201,7 +2205,33 @@ class FloatingControlBarManager {
         snoozeTimer = timer
     }
 
-    private init() {}
+    private init() {
+        stealthObserver = NotificationCenter.default.addObserver(
+            forName: ShortcutSettings.stealthModeChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refreshStealthMode() }
+        }
+    }
+
+    private var stealthObserver: NSObjectProtocol?
+
+    /// Re-apply content protection to the HUD when the stealth setting changes.
+    func refreshStealthMode() {
+        guard let window else { return }
+        StealthWindowController.applyCurrentStealthPreference(to: window)
+    }
+
+    /// Toggle click-through on the HUD (mouse events pass through to the app beneath).
+    /// Returns the new state. Bound to the click-through shortcut.
+    @discardableResult
+    func toggleClickThrough() -> Bool {
+        guard let window else { return false }
+        let newValue = !window.ignoresMouseEvents
+        StealthWindowController.applyClickThrough(window, enabled: newValue)
+        // Briefly flash the ambient glow so the user gets feedback on the (invisible) toggle.
+        OverlayService.shared.showGlowAroundActiveWindow(colorMode: newValue ? .distracted : .focused)
+        return newValue
+    }
 
     /// Create the floating bar window and wire up AppState bindings.
     func setup(appState: AppState, chatProvider: ChatProvider) {
@@ -3206,6 +3236,9 @@ class FloatingControlBarManager {
         chatCancellable?.cancel()
         chatCancellable = nil
         barWindow.state.aiInputText = ""
+        // Every response clears the insert target; only presentCopilotResponse sets one,
+        // and it does so after this call.
+        barWindow.state.insertTargetPID = nil
         barWindow.state.displayedQuery = userText
         barWindow.state.currentAIMessage = assistantMessage
         barWindow.state.isAILoading = false
@@ -3214,6 +3247,93 @@ class FloatingControlBarManager {
         barWindow.state.clearVoiceResponseState()
         barWindow.state.markConversationActivity()
         barWindow.resizeToResponseHeightPublic(animated: true)
+    }
+
+    // MARK: - Copilot Snap
+
+    /// Show the floating bar in a thinking state for a Copilot Snap — called before
+    /// any capture/network work so the bar reacts to the keypress instantly.
+    func beginCopilotSnap() {
+        guard let window = window else { return }
+
+        // Cancel stale subscriptions so old chat data can't flash into the new surface.
+        chatCancellable?.cancel()
+        chatCancellable = nil
+        window.cancelInputHeightObserver()
+        window.state.showingAIConversation = false
+        window.state.clearVisibleConversation(cancelInFlightWork: false)
+        pendingNotificationContext = nil
+
+        // Wire typed follow-ups through the normal floating chat router. The snap
+        // answer itself is generated out-of-band (Gemini), so a follow-up starts a
+        // fresh routed query — acceptable for Phase 0.
+        if let provider = activeFloatingProvider() {
+            window.onSendQuery = { [weak self, weak window, weak provider] message in
+                guard let self = self, let window = window, let provider = provider else { return }
+                Task { @MainActor in
+                    await self.withQueryTracer(query: message, fromVoice: false) {
+                        await self.routeQuery(message, barWindow: window, provider: provider, fromVoice: false)
+                    }
+                }
+            }
+        }
+
+        if !window.isVisible {
+            window.makeKeyAndOrderFront(nil)
+        }
+        window.cancelPendingDismiss()
+        window.savePreChatCenterIfNeeded()
+        window.orderFrontRegardless()
+
+        prepareVisibleQueryState("Copilot is reading your screen…", in: window, fromVoice: false)
+    }
+
+    /// Present a pre-generated Copilot Snap answer in the floating bar's response surface.
+    /// When `artifact` is set (a converted payload — LaTeX, a Markdown table, a #RRGGBB
+    /// list, a translation, or recognized text), it's appended in a copyable form so the
+    /// user can grab it directly.
+    ///
+    /// `targetPID` is the app the user pressed the shortcut in, captured before the capture
+    /// ran. It's what "Insert" types back into.
+    func presentCopilotResponse(
+        headline: String, markdown: String, artifact: String? = nil, artifactKind: String? = nil,
+        targetPID: pid_t? = nil
+    ) {
+        guard let window = window else { return }
+        var text = headline.isEmpty ? markdown : "**\(headline)**\n\n\(markdown)"
+        if let artifact, !artifact.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            text += "\n\n" + Self.renderSnapArtifact(artifact, kind: artifactKind)
+        }
+        let message = ChatMessage(text: text, sender: .ai)
+        completeVisibleAgentResponse(
+            userText: "✦ Copilot",
+            assistantMessage: message,
+            barWindow: window
+        )
+        window.state.insertTargetPID = targetPID
+    }
+
+    /// Wraps a snap artifact for MarkdownUI: fenced code (copyable) for LaTeX / colors /
+    /// recognized text, raw Markdown for tables (so the table renders), a blockquote for
+    /// translations.
+    private static func renderSnapArtifact(_ artifact: String, kind: String?) -> String {
+        let trimmed = artifact.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch kind {
+        case "formula":
+            return "```latex\n\(trimmed)\n```"
+        case "table":
+            // Already GitHub-Markdown; MarkdownUI renders it as a table.
+            return trimmed
+        case "color":
+            return "```\n\(trimmed)\n```"
+        case "translation":
+            return trimmed.split(separator: "\n", omittingEmptySubsequences: false)
+                .map { "> \($0)" }.joined(separator: "\n")
+        case "text":
+            return "```\n\(trimmed)\n```"
+        default:
+            return trimmed
+        }
     }
 
     private func dispatchPendingQueryIfNeeded(
@@ -3278,6 +3398,17 @@ class FloatingControlBarManager {
             assistantId: notification.assistantId,
             surface: "floating_bar"
         )
+        // Expanding a card into chat is positive engagement — feed the tuner.
+        CopilotFeedbackTuner.shared.record(
+            notificationId: notification.id,
+            bucket: notification.context?.feedbackBucket,
+            outcome: .accepted
+        )
+        CopilotCorrectionLog.shared.recordCardOutcome(
+            notificationId: notification.id,
+            bucket: notification.context?.feedbackBucket,
+            situation: notification.context?.contextSummary ?? notification.message,
+            accepted: true)
 
         notificationDismissWorkItem?.cancel()
         notificationDismissWorkItem = nil
@@ -3331,6 +3462,20 @@ class FloatingControlBarManager {
                 assistantId: dismissedNotification.assistantId,
                 surface: "floating_bar"
             )
+            // Dismiss (manual X or auto-timeout) is non-engagement. Idempotent: if Copy/Execute
+            // already recorded .accepted for this card, this is a no-op.
+            CopilotFeedbackTuner.shared.record(
+                notificationId: dismissedNotification.id,
+                bucket: dismissedNotification.context?.feedbackBucket,
+                outcome: .ignored,
+                suggestionText: dismissedNotification.message
+            )
+            CopilotCorrectionLog.shared.recordCardOutcome(
+                notificationId: dismissedNotification.id,
+                bucket: dismissedNotification.context?.feedbackBucket,
+                situation: dismissedNotification.context?.contextSummary
+                    ?? dismissedNotification.message,
+                accepted: false)
         }
 
         if !pendingNotifications.isEmpty, !window.state.showingAIConversation {

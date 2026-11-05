@@ -1274,8 +1274,8 @@ struct RewindPage: View {
                         .fill(OmiColors.border)
                         .frame(width: 1)
 
-                    // Right: Notes
-                    LiveNotesView()
+                    // Right: meeting minutes, or the running notes
+                    RecordingSidePanel()
                         .frame(width: notesWidth)
                 }
             }

@@ -32,6 +32,28 @@ class ScreenCaptureManager {
         return data
     }
 
+    /// Returns JPEG data for the screen, already downscaled for a vision model.
+    ///
+    /// Use this instead of `captureScreenJPEG()` + `GeminiImageCompression.compress(_:)`:
+    /// that pair encodes the full Retina frame, decodes it again, downscales, and encodes
+    /// a second time — two full-size encodes before a single request goes out. Here the
+    /// `CGImage` goes straight to the compressor and is encoded once.
+    static func captureForVision(
+        preset: GeminiImageCompression.Preset = .interactive
+    ) -> Data? {
+        guard let image = captureScreenImage() else { return nil }
+        guard let data = GeminiImageCompression.encode(image, preset: preset) else {
+            log("ScreenCaptureManager: vision encoding failed")
+            return nil
+        }
+        let size = GeminiImageCompression.targetSize(
+            width: image.width, height: image.height, longEdge: preset.longEdge)
+        log(
+            "ScreenCaptureManager: Screenshot captured \(image.width)x\(image.height) → "
+                + "\(size.width)x\(size.height), JPEG \(data.count / 1024) KB")
+        return data
+    }
+
     /// Returns WebP data for the screen under the mouse cursor at full Retina
     /// resolution, compressed in memory via libwebp. No disk I/O.
     static func captureScreenData() -> Data? {

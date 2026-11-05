@@ -69,6 +69,7 @@ from models.message_event import (
     MessageServiceStatusEvent,
     PhotoDescribedEvent,
     PhotoProcessingEvent,
+    ProactiveSuggestionEvent,
     SegmentsDeletedEvent,
     SpeakerLabelSuggestionEvent,
     TranslationEvent,
@@ -77,6 +78,7 @@ from models.transcript_segment import Translation
 from models.users import PlanType
 from utils.analytics import billable_transcription_seconds, record_usage
 from utils.app_integrations import trigger_realtime_integrations
+from utils.copilot_live import evaluate_copilot_suggestion
 from utils.apps import is_audio_bytes_app_enabled
 from utils.conversations.process_conversation import retrieve_in_progress_conversation
 from utils.notifications import send_credit_limit_notification, send_silent_user_notification
@@ -164,7 +166,14 @@ from utils.stt.speaker_embedding import (
     SPEAKER_MATCH_THRESHOLD,
 )
 from utils.speaker_sample_migration import maybe_migrate_person_samples
-from utils.executors import db_executor, storage_executor, sync_executor, run_blocking, start_background_task
+from utils.executors import (
+    db_executor,
+    storage_executor,
+    sync_executor,
+    llm_executor,
+    run_blocking,
+    start_background_task,
+)
 from utils.log_sanitizer import sanitize, sanitize_pii
 from utils.async_tasks import WebSocketTaskSupervisor, drain_tasks, wait_for_event
 
@@ -1761,6 +1770,31 @@ async def _stream_handler(
                         )
                     except Exception as e:
                         logger.error(f"Error triggering realtime integrations: {e} {uid} {session_id}")
+
+                # Live copilot lane: evaluate a proactive suggestion off the event loop and,
+                # if one is ready, push it back on THIS session's WebSocket (the phone/glasses
+                # equivalent of the desktop's live copilot). Non-blocking; the FCM mentor path
+                # remains the out-of-session fallback.
+                if user_has_credits:
+                    _copilot_segments = [s.dict() for s in transcript_segments]
+
+                    async def _run_copilot_lane(segs=_copilot_segments):
+                        try:
+                            suggestion = await run_blocking(llm_executor, evaluate_copilot_suggestion, uid, segs)
+                            if suggestion:
+                                _send_message_event(
+                                    ProactiveSuggestionEvent(
+                                        suggestion=suggestion["suggestion"],
+                                        headline=suggestion.get("headline"),
+                                        category=suggestion.get("category"),
+                                        confidence=suggestion.get("confidence"),
+                                        scenario=suggestion.get("scenario"),
+                                    )
+                                )
+                        except Exception as e:
+                            logger.error(f"Error in copilot live lane: {e} {uid} {session_id}")
+
+                    spawn(_run_copilot_lane(), name="copilot_live")
 
                 # Onboarding: pass segments to handler for answer detection
                 if onboarding_handler and not onboarding_handler.completed:

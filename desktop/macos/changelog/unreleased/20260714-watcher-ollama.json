@@ -1,0 +1,3 @@
+{
+  "change": "Watcher agents can now run on a local Ollama model instead of the cloud — pick 'Ollama (local)' and a model name in the watcher editor for fully-private, offline watching"
+}

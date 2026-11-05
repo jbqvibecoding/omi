@@ -1709,6 +1709,13 @@ final class RealtimeHubController: NSObject, RealtimeHubSessionDelegate {
       interrupted: interrupted)
   }
 
+  /// Seed a prior exchange into the voice continuity memory so the next voice turn
+  /// knows what was just discussed — used by Copilot hot mode to carry the snap
+  /// question/answer into the upgraded live voice session.
+  func seedVoiceContinuity(userText: String, assistantText: String) {
+    rememberVoiceContinuityTurn(userText: userText, assistantText: assistantText, interrupted: false)
+  }
+
   private func rememberVoiceContinuityTurn(userText: String, assistantText: String, interrupted: Bool) {
     let user = userText.trimmingCharacters(in: .whitespacesAndNewlines)
     let assistant = assistantText.trimmingCharacters(in: .whitespacesAndNewlines)

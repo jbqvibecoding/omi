@@ -1,0 +1,3 @@
+{
+    "change": "Added an optional ambient text context: the copilot can read the app's own text and the real page URL instead of only a picture of your screen — off by default, kept in memory for 30 minutes, and skips the apps you excluded from screen recording"
+}

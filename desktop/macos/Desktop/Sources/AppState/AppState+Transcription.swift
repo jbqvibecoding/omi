@@ -59,14 +59,26 @@ extension AppState {
         && (ProcessInfo.processInfo.environment["OMI_FORCE_CLOUD_STT"] == "1"
           || UserDefaults.standard.bool(forKey: "forceCloudSTT")
           || forceCloudSTTForSession)  // set after an on-device Parakeet model-load failure
-      useLocalSTT = effectiveSource != .bleDevice && !forceCloudSTT && Self.isAppleSilicon
+      // Which recognizer can read this language on this Mac, per channel. Parakeet alone used
+      // to take every language on Apple Silicon, and turned Chinese, Japanese and Korean into
+      // nonsense; those now go to Apple's recognizer (macOS 26) or the cloud.
+      transcriberPlan = TranscriberRouting.plan(
+        language: AssistantSettings.shared.transcriptionLanguage,
+        localAllowed: effectiveSource != .bleDevice && !forceCloudSTT && Self.isAppleSilicon,
+        appleSpeechAvailable: TranscriberRouting.appleSpeechAvailable,
+        subtitlesOn: CopilotSettings.shared.subtitlesEnabled,
+        forceLocal: forceLocalSTTForSession)
+      useLocalSTT = transcriberPlan != .cloud
       let clientConversationId = UUID().uuidString.lowercased()
 
-      if useLocalSTT {
-        log("Transcription: ON-DEVICE Parakeet mode (OMI_LOCAL_STT) — no cloud STT")
+      if case .local(let micKind, let systemKind) = transcriberPlan {
+        log("Transcription: ON-DEVICE mode — mic: \(micKind.rawValue), system: \(systemKind.rawValue) — no cloud STT")
         // Segments are delivered on the main actor by the service, so no Task hop here.
+        // Echo filter: without cancellation, the mic re-captures the other party's voice
+        // from the speakers — drop mic segments that echo recent system audio.
+        AcousticEchoFilter.shared.reset()
         let onLocalSegments: LocalTranscriptionService.SegmentsHandler = { [weak self] segments in
-          self?.handleBackendSegments(segments)
+          self?.handleBackendSegments(AcousticEchoFilter.shared.filter(segments))
         }
         // If the on-device model can't load, fall back to cloud STT instead of recording
         // into a void (the failure is otherwise silent — a blank transcript).
@@ -74,10 +86,10 @@ extension AppState {
           self?.handleLocalSTTModelLoadFailure()
         }
         // Mic = the user; system audio = another speaker. Transcribed separately for diarization.
-        let mic = LocalTranscriptionService(language: effectiveLanguage, isUser: true)
+        let mic = TranscriberRouting.make(micKind, language: effectiveLanguage, isUser: true)
         mic.start(onSegments: onLocalSegments, onModelLoadFailed: onModelLoadFailed)
         localMicService = mic
-        let system = LocalTranscriptionService(language: effectiveLanguage, isUser: false)
+        let system = TranscriberRouting.make(systemKind, language: effectiveLanguage, isUser: false)
         system.start(onSegments: onLocalSegments, onModelLoadFailed: onModelLoadFailed)
         localSystemService = system
       } else {
@@ -183,6 +195,13 @@ extension AppState {
       totalWordCount = 0
       liveSpeakerPersonMap = [:]
       LiveTranscriptMonitor.shared.clear()
+      MeetingMinutesEngine.shared.recordingWillStart()
+      SubtitleController.shared.recordingStarted(writeBack: { [weak self] segmentId, lang, text in
+        self?.applySubtitleTranslation(segmentId: segmentId, lang: lang, text: text)
+      })
+      SubtitleController.shared.onRoutingNeedsRefresh = { [weak self] in
+        self?.refreshSystemTranscriberForSubtitles()
+      }
       recordingStartTime = Date()
       currentBackendConversationId = nil
       pendingBackendConversationId = nil
@@ -209,6 +228,15 @@ extension AppState {
             self.currentSessionId = sessionId
             // Start live notes session
             LiveNotesMonitor.shared.startSession(sessionId: sessionId)
+            // Start live copilot suggestions session
+            LiveSuggestionsMonitor.shared.startSession(sessionId: sessionId)
+            // Start structured session summary
+            SessionSummaryMonitor.shared.startSession(sessionId: sessionId)
+            // Track which slide is up and what gets said over it
+            SlideTimeline.shared.start()
+            // Live minutes, once the session turns out to be a meeting
+            MeetingMinutesEngine.shared.startSession(
+              sessionId: sessionId, speakerNames: { [weak self] in self?.liveSpeakerNames() ?? [:] })
           }
           if let backendId = await MainActor.run(body: { () -> String? in
             let candidate = self.pendingBackendConversationId ?? self.currentBackendConversationId
@@ -854,6 +882,16 @@ extension AppState {
     LiveTranscriptMonitor.shared.clear()
     LiveNotesMonitor.shared.endSession()
     LiveNotesMonitor.shared.clear()
+    LiveSuggestionsMonitor.shared.endSession()
+    // Before the summary monitor: its archive waits on these minutes' final pass.
+    MeetingMinutesEngine.shared.endSession(continuing: true)
+    SubtitleController.shared.conversationRotated()
+    SessionSummaryMonitor.shared.endSession()
+    // Rolling into the next conversation: the previous deck is over, and its slides must
+    // not be attributed to what is about to be said.
+    SlideTimeline.shared.stop()
+    SlideTimeline.shared.reset()
+    SlideTimeline.shared.start()
 
     // Reset the recording start time and backend binding for the next conversation.
     // If the new WebSocket fast-reconnects before the backend finalizes the prior
@@ -927,16 +965,21 @@ extension AppState {
         // On-device mode: re-arm fresh local Parakeet instances (mic + system) for the next
         // conversation — do NOT reconnect the cloud WebSocket. Stopping the old ones flushes
         // their final tails; the source-routed capture callbacks feed the new instances.
+        AcousticEchoFilter.shared.reset()
         let onLocalSegments: LocalTranscriptionService.SegmentsHandler = { [weak self] segments in
-          self?.handleBackendSegments(segments)
+          self?.handleBackendSegments(AcousticEchoFilter.shared.filter(segments))
         }
-        let mic = LocalTranscriptionService(language: effectiveLanguage, isUser: true)
-        mic.start(onSegments: onLocalSegments)
+        let kinds: (mic: TranscriberKind, system: TranscriberKind) = {
+          if case .local(let mic, let system) = transcriberPlan { return (mic, system) }
+          return (.parakeet, .parakeet)
+        }()
+        let mic = TranscriberRouting.make(kinds.mic, language: effectiveLanguage, isUser: true)
+        mic.start(onSegments: onLocalSegments, onModelLoadFailed: nil)
         localMicService = mic
-        let system = LocalTranscriptionService(language: effectiveLanguage, isUser: false)
-        system.start(onSegments: onLocalSegments)
+        let system = TranscriberRouting.make(kinds.system, language: effectiveLanguage, isUser: false)
+        system.start(onSegments: onLocalSegments, onModelLoadFailed: nil)
         localSystemService = system
-        log("Transcription: Re-armed on-device Parakeet (mic + system) for next conversation")
+        log("Transcription: Re-armed on-device transcription (mic: \(kinds.mic.rawValue), system: \(kinds.system.rawValue)) for next conversation")
       } else {
         transcriptionService = try TranscriptionService(
           language: effectiveLanguage,
@@ -987,6 +1030,11 @@ extension AppState {
         await MainActor.run {
           self.currentSessionId = sessionId
           LiveNotesMonitor.shared.startSession(sessionId: sessionId)
+          LiveSuggestionsMonitor.shared.startSession(sessionId: sessionId)
+          SessionSummaryMonitor.shared.startSession(sessionId: sessionId)
+          SlideTimeline.shared.start()
+          MeetingMinutesEngine.shared.startSession(
+            sessionId: sessionId, speakerNames: { [weak self] in self?.liveSpeakerNames() ?? [:] })
         }
         if let backendId = await MainActor.run(body: { () -> String? in
           let candidate = self.pendingBackendConversationId ?? self.currentBackendConversationId
@@ -1087,6 +1135,13 @@ extension AppState {
 
     // End live notes session
     LiveNotesMonitor.shared.endSession()
+    LiveSuggestionsMonitor.shared.endSession()
+    // Before the summary monitor: its archive waits on these minutes' final pass.
+    MeetingMinutesEngine.shared.endSession()
+    SubtitleController.shared.recordingStopped()
+    SessionSummaryMonitor.shared.endSession()
+    // Stopped, not reset: the summary and the export still have to read the deck.
+    SlideTimeline.shared.stop()
 
     // Mark DB session as finished (pending upload / crash recovery)
     if finishSession, let sessionId = currentSessionId {
@@ -1122,6 +1177,71 @@ extension AppState {
     currentTranscript = ""
 
     log("Transcription: Stopped")
+  }
+
+  /// A subtitle translation, written into the transcript: the line shows bilingual in the
+  /// main window, and the translation is saved with it.
+  func applySubtitleTranslation(segmentId: String, lang: String, text: String) {
+    guard let index = speakerSegments.firstIndex(where: { $0.id == segmentId }) else { return }
+    var segment = speakerSegments[index]
+    segment.translations = segment.translations.filter { $0.lang != lang } + [SegmentTranslation(lang: lang, text: text)]
+    speakerSegments[index] = segment
+    LiveTranscriptMonitor.shared.updateSegments(speakerSegments)
+    // Saved by segment id; a segment without one would be inserted again as a duplicate row.
+    guard let sessionId = currentSessionId, segment.segmentId != nil else { return }
+    let mapped = segment.translations.map { TranscriptTranslation(lang: $0.lang, text: $0.text) }
+    let translationsJson = (try? JSONEncoder().encode(mapped)).flatMap { String(data: $0, encoding: .utf8) }
+    Task {
+      do {
+        try await TranscriptionStorage.shared.upsertSegment(
+          sessionId: sessionId,
+          backendSegmentId: segment.segmentId,
+          speaker: segment.speaker,
+          text: segment.text,
+          startTime: segment.start,
+          endTime: segment.end,
+          isUser: segment.isUser,
+          personId: segment.personId,
+          speakerLabel: nil,
+          translationsJson: translationsJson
+        )
+      } catch {
+        logError("Transcription: Failed to persist subtitle translation", error: error)
+      }
+    }
+  }
+
+  /// Subtitles were turned on mid-recording: on macOS 26, the other side's channel moves to
+  /// Apple's recognizer (words as they are said) instead of waiting for the next recording.
+  func refreshSystemTranscriberForSubtitles() {
+    guard isTranscribing, useLocalSTT, case .local(let micKind, .parakeet) = transcriberPlan else { return }
+    let language = AssistantSettings.shared.transcriptionLanguage
+    let next = TranscriberRouting.plan(
+      language: language, localAllowed: true,
+      appleSpeechAvailable: TranscriberRouting.appleSpeechAvailable, subtitlesOn: true)
+    guard case .local(_, .appleSpeech) = next else { return }
+    let effectiveLanguage = AssistantSettings.shared.effectiveTranscriptionLanguage
+    let onLocalSegments: LocalTranscriptionService.SegmentsHandler = { [weak self] segments in
+      self?.handleBackendSegments(AcousticEchoFilter.shared.filter(segments))
+    }
+    let old = localSystemService
+    let replacement = TranscriberRouting.make(.appleSpeech, language: effectiveLanguage, isUser: false)
+    replacement.start(onSegments: onLocalSegments, onModelLoadFailed: nil)
+    localSystemService = replacement
+    transcriberPlan = .local(mic: micKind, system: .appleSpeech)
+    log("Transcription: subtitles on — system channel moved to Apple's recognizer")
+    // The old recognizer's last words still belong to this session.
+    Task { @MainActor in await old?.finish() }
+  }
+
+  /// The names the user gave live speakers, by speaker id — the names the transcript shows.
+  func liveSpeakerNames() -> [Int: String] {
+    let people = peopleById
+    var names: [Int: String] = [:]
+    for (speakerId, personId) in liveSpeakerPersonMap {
+      if let person = people[personId] { names[speakerId] = person.name }
+    }
+    return names
   }
 
   /// Aggressively trim transcript state to free memory (called by ResourceMonitor during critical memory pressure).

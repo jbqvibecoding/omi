@@ -178,7 +178,13 @@ class PushToTalkManager: ObservableObject {
     switch event.type {
     case .flagsChanged:
       guard shortcut.modifierOnly else { return }
-      pttActive = shortcut.matchesFlagsChanged(event)
+      // While interpretation is on, right ⌥ alone belongs to the interpreter (it talks to the
+      // meeting); left ⌥ still asks omi. Treated as "not pressed" rather than ignored, so a press
+      // that slides from left to right still lets push-to-talk go.
+      let claimed = shortcut.modifiers == [.option]
+        && InterpretKeyMonitor.claims(
+          event.modifierFlags, interpreterOn: CopilotSettings.shared.interpreterEnabled)
+      pttActive = !claimed && shortcut.matchesFlagsChanged(event)
     case .keyDown:
       guard !shortcut.modifierOnly, !event.isARepeat else { return }
       pttActive = shortcut.matchesKeyDown(event)
@@ -422,6 +428,28 @@ class PushToTalkManager: ObservableObject {
     guard state != .idle else { return }
     log("PushToTalkManager: cancelling listening")
     stopListening()
+  }
+
+  // MARK: - Copilot hot mode (programmatic locked voice session)
+
+  /// Start a continuous voice session (locked listening) programmatically — used by
+  /// Copilot hot mode (double-press of the copilot shortcut). Returns whether the
+  /// session actually started; refuses when PTT is already mid-interaction.
+  func startLockedVoiceSession() -> Bool {
+    guard state == .idle else {
+      log("PushToTalkManager: startLockedVoiceSession ignored — state=\(state)")
+      return false
+    }
+    enterLockedListening()
+    return state == .lockedListening
+  }
+
+  /// Finalize a locked voice session programmatically (copilot shortcut pressed
+  /// again during hot mode). Same idempotent path as tapping the PTT key.
+  func finalizeVoiceSession() {
+    guard state == .lockedListening else { return }
+    log("PushToTalkManager: finalizing locked voice session (copilot hot mode)")
+    finalize()
   }
 
   // MARK: - Agent voice follow-up

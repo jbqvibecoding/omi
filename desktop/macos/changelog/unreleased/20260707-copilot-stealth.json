@@ -1,0 +1,3 @@
+{
+    "change": "Added stealth mode: the copilot HUD stays visible to you but is hidden from screen recordings, screenshots, and screen sharing, with a click-through shortcut (⌘M) to let clicks pass through"
+}

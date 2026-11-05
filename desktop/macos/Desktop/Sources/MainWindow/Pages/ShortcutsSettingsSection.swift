@@ -6,6 +6,10 @@ struct ShortcutsSettingsSection: View {
   @State private var recordingTarget: ShortcutTarget?
   @State private var captureError: String?
   @State private var localShortcutCaptureMonitor: Any?
+  /// Bumped when a hotkey registration result changes. `GlobalShortcutManager` is a plain
+  /// class (it is driven from non-main contexts), so it cannot publish directly; reading
+  /// this during body evaluation is what makes the warning rows refresh.
+  @State private var registrationFailureTick: UInt8 = 0
 
   init(highlightedSettingId: Binding<String?> = .constant(nil)) {
     self._highlightedSettingId = highlightedSettingId
@@ -13,16 +17,27 @@ struct ShortcutsSettingsSection: View {
 
   private enum ShortcutTarget {
     case askOmi
+    case copilot
     case pushToTalk
   }
 
   var body: some View {
     VStack(spacing: 20) {
       askOmiKeyCard
+      copilotKeyCard
       pttKeyCard
       doubleTapCard
       pttSoundsCard
       muteAudioCard
+      referenceCard
+    }
+    // Redrawn when a hotkey fails to register, which happens asynchronously at launch
+    // and whenever a shortcut changes.
+    .onReceive(
+      NotificationCenter.default.publisher(
+        for: GlobalShortcutManager.registrationFailuresChanged)
+    ) { _ in
+      registrationFailureTick &+= 1
     }
     .onDisappear {
       stopShortcutCapture()
@@ -85,6 +100,68 @@ struct ShortcutsSettingsSection: View {
       stopShortcutCapture()
       settings.askOmiEnabled = true
       settings.askOmiShortcut = shortcut
+    } label: {
+      shortcutSelectionLabel(tokens: shortcut.displayTokens, isSelected: isSelected)
+    }
+    .buttonStyle(.plain)
+  }
+
+  private var copilotKeyCard: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      VStack(alignment: .leading, spacing: 4) {
+        Text("Copilot Snap")
+          .scaledFont(size: 16, weight: .semibold)
+          .foregroundColor(OmiColors.textPrimary)
+        Text("Snapshot your screen and get an instant AI answer — no question needed.")
+          .scaledFont(size: 13)
+          .foregroundColor(OmiColors.textSecondary)
+      }
+
+      HStack(spacing: 12) {
+        ForEach(ShortcutSettings.copilotPresets, id: \.self) { shortcut in
+          copilotKeyButton(shortcut)
+        }
+        customShortcutButton(
+          for: .copilot, isSelected: settings.copilotEnabled && settings.copilotUsesCustomShortcut)
+        disableShortcutButton(isDisabled: !settings.copilotEnabled) {
+          stopShortcutCapture()
+          settings.copilotEnabled = false
+        }
+        Spacer()
+      }
+
+      if settings.copilotEnabled
+        && (recordingTarget == .copilot || settings.copilotUsesCustomShortcut
+          || (captureError != nil && recordingTarget == .copilot))
+      {
+        shortcutRecorderCard(
+          title: recordingTarget == .copilot
+            ? "Press your custom Copilot Snap shortcut now" : "Custom Copilot Snap shortcut",
+          shortcut: settings.copilotShortcut,
+          isRecording: recordingTarget == .copilot,
+          action: { startShortcutCapture(.copilot) },
+          helperText: "Use at least one non-modifier key."
+        )
+      }
+    }
+    .padding(20)
+    .background(
+      RoundedRectangle(cornerRadius: 12)
+        .fill(OmiColors.backgroundTertiary.opacity(0.5))
+    )
+    .modifier(
+      SettingHighlightModifier(
+        settingId: "floatingbar.copilot", highlightedSettingId: $highlightedSettingId))
+  }
+
+  private func copilotKeyButton(_ shortcut: ShortcutSettings.KeyboardShortcut) -> some View {
+    let isSelected =
+      settings.copilotEnabled && settings.copilotShortcut == shortcut
+      && !settings.copilotUsesCustomShortcut
+    return Button {
+      stopShortcutCapture()
+      settings.copilotEnabled = true
+      settings.copilotShortcut = shortcut
     } label: {
       shortcutSelectionLabel(tokens: shortcut.displayTokens, isSelected: isSelected)
     }
@@ -233,29 +310,82 @@ struct ShortcutsSettingsSection: View {
         settingId: "floatingbar.muteaudio", highlightedSettingId: $highlightedSettingId))
   }
 
+  /// Every shortcut in one place, plus anything wrong with the set as a whole.
+  ///
+  /// Driven off `settings.allBindings` rather than a hand-written list: this view was
+  /// written once and then silently went stale, because nothing fails when a list of
+  /// labels forgets a shortcut that was added later.
   private var referenceCard: some View {
     VStack(alignment: .leading, spacing: 12) {
       Text("Keyboard Shortcuts")
         .scaledFont(size: 16, weight: .semibold)
         .foregroundColor(OmiColors.textPrimary)
 
-      shortcutRow(
-        label: "Ask omi",
-        keys: settings.askOmiEnabled ? settings.askOmiShortcut.displayLabel : "Disabled")
+      ForEach(settings.allBindings) { binding in
+        shortcutRow(
+          label: binding.label,
+          keys: binding.enabled
+            ? binding.shortcut.displayLabel + (binding.shortcut.modifierOnly ? " hold" : "")
+            : "Disabled")
+      }
       shortcutRow(label: "Toggle floating bar", keys: "\u{2318}\\")
-      shortcutRow(
-        label: "Push to talk",
-        keys: settings.pttEnabled ? settings.pttShortcut.displayLabel + " hold" : "Disabled")
       if settings.pttEnabled && settings.doubleTapForLock {
         shortcutRow(
           label: "Locked listening", keys: settings.pttShortcut.displayLabel + " \u{00D7}2")
       }
+
+      problemRows
     }
     .padding(20)
     .background(
       RoundedRectangle(cornerRadius: 12)
         .fill(OmiColors.backgroundTertiary.opacity(0.5))
     )
+  }
+
+  /// Two things that otherwise fail in silence: two shortcuts set to the same keys, where
+  /// macOS gives the combination to whichever registered first; and a combination another
+  /// app already holds, which Carbon reports as a return code and nothing more.
+  @ViewBuilder
+  private var problemRows: some View {
+    let clashes = settings.conflicts()
+    _ = registrationFailureTick  // read so this block re-evaluates when registration changes
+    let blocked = settings.allBindings.filter {
+      $0.enabled && GlobalShortcutManager.shared.registrationFailures.contains($0.id)
+    }
+    if !clashes.isEmpty || !blocked.isEmpty {
+      VStack(alignment: .leading, spacing: 6) {
+        Divider().padding(.vertical, 2)
+        ForEach(clashes) { clash in
+          problemRow(
+            icon: clash.isHardCollision ? "exclamationmark.triangle.fill" : "info.circle",
+            text: clash.message,
+            isError: clash.isHardCollision)
+        }
+        ForEach(blocked) { binding in
+          problemRow(
+            icon: "exclamationmark.triangle.fill",
+            text:
+              "\(binding.label) (\(binding.shortcut.displayLabel)) could not be registered — "
+              + "another app is probably using it.",
+            isError: true)
+        }
+      }
+    }
+  }
+
+  private func problemRow(icon: String, text: String, isError: Bool) -> some View {
+    HStack(alignment: .top, spacing: 6) {
+      Image(systemName: icon)
+        .scaledFont(size: 11)
+        .foregroundColor(isError ? OmiColors.error : OmiColors.textTertiary)
+        .padding(.top, 1)
+      Text(text)
+        .scaledFont(size: 11)
+        .foregroundColor(isError ? OmiColors.error : OmiColors.textTertiary)
+        .fixedSize(horizontal: false, vertical: true)
+      Spacer(minLength: 0)
+    }
   }
 
   private func shortcutRow(label: String, keys: String) -> some View {
@@ -279,6 +409,8 @@ struct ShortcutsSettingsSection: View {
       switch target {
       case .askOmi:
         settings.askOmiEnabled = true
+      case .copilot:
+        settings.copilotEnabled = true
       case .pushToTalk:
         settings.pttEnabled = true
       }
@@ -449,6 +581,19 @@ struct ShortcutsSettingsSection: View {
       }
       settings.askOmiEnabled = true
       settings.askOmiShortcut = shortcut
+    case .copilot:
+      if event.type == .flagsChanged {
+        captureError = "Copilot Snap needs a non-modifier key."
+        return true
+      }
+      guard
+        let shortcut = ShortcutSettings.KeyboardShortcut.fromRecordingEvent(
+          event, allowModifierOnly: false)
+      else {
+        return false
+      }
+      settings.copilotEnabled = true
+      settings.copilotShortcut = shortcut
     case .pushToTalk:
       guard
         let shortcut = ShortcutSettings.KeyboardShortcut.fromRecordingEvent(

@@ -1,0 +1,3 @@
+{
+  "change": "Watchers can now hand off to each other (start/stop another watcher, share notes via $MEMORY@id) and improve themselves — 'Improve from recent runs' rewrites a watcher using its own run history"
+}

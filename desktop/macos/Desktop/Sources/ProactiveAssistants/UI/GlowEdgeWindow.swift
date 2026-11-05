@@ -42,6 +42,10 @@ class GlowEdgeWindow: NSWindow {
     // Click-through - don't intercept any mouse events
     self.ignoresMouseEvents = true
 
+    // Stealth: keep the ambient glow out of screen recordings / shares too, matching
+    // the copilot HUD, so nothing the copilot draws leaks onto a shared screen.
+    self.sharingType = ShortcutSettings.shared.stealthModeEnabled ? .none : .readOnly
+
     // Don't show in mission control or app switcher
     self.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
 

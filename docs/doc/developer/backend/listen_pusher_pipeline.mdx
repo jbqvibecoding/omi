@@ -269,6 +269,9 @@ sequenceDiagram
 | `memory_processing_started` | `{type}` | Conversation sent to pusher for LLM |
 | `memory_created` | `{type, memory: {id, structured: {title, overview, ...}}}` | LLM processing complete |
 | `speaker_label_suggestion` | `{type, person_id, person_name, distance, segments}` | Speaker matched via embedding |
+| `proactive_suggestion` | `{type, suggestion, headline, category, confidence, scenario}` | Live copilot suggestion pushed in-session (phone/glasses parity with the desktop live copilot) |
+
+**Live copilot lane** — in the transcript loop (`stream_transcript_process`), each transcript batch also spawns a non-blocking `evaluate_copilot_suggestion(uid, segments)` (`utils/copilot_live.py`) that reuses the 3-stage proactive pipeline (gate → generate → critic from `utils/llm/proactive_notification.py`) with its own `MessageBuffer` debounce and a dedicated `copilot_live` Redis rate-limit key (~90s, independent of the mentor FCM path). On a hit it emits a `proactive_suggestion` event on the owning WebSocket via `_send_message_event`; the FCM mentor path (`app_integrations.py`) remains the out-of-session fallback. LLM work runs on `llm_executor` via `run_blocking`, so the transcript loop never blocks.
 
 ### Client → Server
 

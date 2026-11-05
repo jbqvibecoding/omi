@@ -1,0 +1,3 @@
+{
+  "change": "Watchers can now run on a real schedule — every weekday at 9am, monthly, or a cron line — catch up once if your Mac was asleep when they were due, back off and pause themselves when they keep failing, and show you a plain history of every run"
+}

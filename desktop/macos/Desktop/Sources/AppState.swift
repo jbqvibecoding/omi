@@ -284,15 +284,17 @@ class AppState: ObservableObject {
     get { servicesCoordinator.vadGateService }
     set { servicesCoordinator.vadGateService = newValue }
   }
-  var localMicService: LocalTranscriptionService? {
+  var localMicService: LocalSegmentTranscriber? {
     get { servicesCoordinator.localMicService }
     set { servicesCoordinator.localMicService = newValue }
   }
-  var localSystemService: LocalTranscriptionService? {
+  var localSystemService: LocalSegmentTranscriber? {
     get { servicesCoordinator.localSystemService }
     set { servicesCoordinator.localSystemService = newValue }
   }
   var useLocalSTT = false
+  /// Which recognizer runs each channel this recording (see TranscriberRouting).
+  var transcriberPlan: TranscriberPlan = .cloud
   var sttFallbackInProgress = false
   var forceCloudSTTForSession = false
   var forceLocalSTTForSession = false

@@ -500,13 +500,16 @@ actor GeminiClient {
   /// - Parameters:
   ///   - prompt: Text prompt to send
   ///   - systemPrompt: System instructions for the model
+  ///   - jsonOutput: Ask for a JSON reply without fixing its shape (JSON mode, no schema) —
+  ///     for replies too nested for a response schema that still have to parse.
   /// - Returns: The text response from the model
   func sendTextRequest(
     prompt: String,
     systemPrompt: String,
     maxRetries: Int = 2,
     timeout: TimeInterval = 300,
-    thinkingBudget: Int = 0
+    thinkingBudget: Int = 0,
+    jsonOutput: Bool = false
   ) async throws -> String {
     var lastError: Error?
 
@@ -522,7 +525,7 @@ actor GeminiClient {
             parts: [GeminiRequest.SystemInstruction.TextPart(text: systemPrompt)]
           ),
           generationConfig: GeminiRequest.GenerationConfig(
-            responseMimeType: nil,
+            responseMimeType: jsonOutput ? "application/json" : nil,
             responseSchema: nil,
             thinkingConfig: ThinkingConfig(thinkingBudget: max(thinkingBudget, ThinkingConfig.minimumBudget(for: model)))
           )

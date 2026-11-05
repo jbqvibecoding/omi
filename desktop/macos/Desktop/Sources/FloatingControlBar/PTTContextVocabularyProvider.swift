@@ -19,9 +19,26 @@ enum PTTContextVocabularyProvider {
     let settingsVocabulary = await MainActor.run {
       AssistantSettings.shared.effectiveVocabulary
     }
+    // Terms the user has fixed by hand at least twice after omi typed them. Stronger
+    // evidence of the spelling they want than anything OCR can offer, so they go in
+    // alongside the vocabulary the user configured explicitly.
+    let correctedTerms = await MainActor.run {
+      InsertCorrectionStore.shared.confirmedTerms()
+    }
+    // The names and terms of the meeting in progress, as its minutes settled on spelling them
+    // — what you are most likely to say next when you ask omi something mid-meeting.
+    let meetingTerms = await MainActor.run {
+      MeetingMinutesEngine.shared.vocabularyTerms()
+    }
 
     var collector = KeywordCollector(limit: maxKeywords)
     for term in settingsVocabulary {
+      collector.add(term)
+    }
+    for term in correctedTerms {
+      collector.add(term)
+    }
+    for term in meetingTerms {
       collector.add(term)
     }
 

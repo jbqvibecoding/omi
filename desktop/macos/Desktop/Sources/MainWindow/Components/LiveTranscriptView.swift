@@ -30,11 +30,74 @@ struct LiveTranscriptPanel: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(32)
         } else {
-            LiveTranscriptView(
-                segments: displaySegments,
-                speakerNames: speakerNames,
-                onSpeakerTapped: onSpeakerTapped
-            )
+            VStack(spacing: 0) {
+                UnansweredQuestionsBar()
+                LiveTranscriptView(
+                    segments: displaySegments,
+                    speakerNames: speakerNames,
+                    onSpeakerTapped: onSpeakerTapped
+                )
+            }
+        }
+    }
+}
+
+/// Questions the other side asked that nothing answered.
+///
+/// The copilot already notices these; what it could not do was let you come back to one.
+/// Anything that stops a card — the cooldown, the per-session cap, "only when I ask for
+/// it", presentation mode — used to take the question with it, and the only way back was
+/// to retype it. Sits above the transcript because that is where you are already looking
+/// when you realise you missed something.
+private struct UnansweredQuestionsBar: View {
+    @ObservedObject private var backlog = CopilotQuestionBacklog.shared
+    @State private var answeringId: UUID?
+
+    var body: some View {
+        let pending = backlog.pending
+        if !pending.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Asked of you, unanswered")
+                    .scaledFont(size: 11, weight: .medium)
+                    .foregroundColor(OmiColors.textTertiary)
+                ForEach(pending.prefix(3)) { question in
+                    Button {
+                        answer(question)
+                    } label: {
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: answeringId == question.id
+                                ? "ellipsis.circle" : "questionmark.circle")
+                                .scaledFont(size: 11)
+                                .foregroundColor(OmiColors.textTertiary)
+                                .padding(.top, 1)
+                            Text(question.text)
+                                .scaledFont(size: 12)
+                                .foregroundColor(OmiColors.textSecondary)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(answeringId != nil)
+                    .help("Answer just this question")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(OmiColors.backgroundTertiary.opacity(0.4))
+        }
+    }
+
+    private func answer(_ question: BackloggedQuestion) {
+        guard answeringId == nil else { return }
+        answeringId = question.id
+        Task { @MainActor in
+            await LiveSuggestionsMonitor.shared.answerBackloggedQuestion(id: question.id)
+            answeringId = nil
         }
     }
 }
@@ -110,6 +173,14 @@ struct LiveTranscriptView: View {
     var speakerNames: [Int: String] = [:]
     var onSpeakerTapped: ((SpeakerSegment) -> Void)? = nil
 
+    /// Jumps asked for by the minutes ("go to what was said").
+    @ObservedObject private var jumps = TranscriptJumpCenter.shared
+    /// The line a jump landed on, lit up for a moment so the eye finds it.
+    @State private var highlightedId: String?
+    /// After a jump the transcript stops following new lines, or the next one would yank the
+    /// reader straight back to the bottom.
+    @State private var followPaused = false
+
     /// Format timestamp as MM:SS
     private func formatTime(_ seconds: Double) -> String {
         let totalSeconds = Int(seconds)
@@ -133,8 +204,10 @@ struct LiveTranscriptView: View {
                             segment: segment,
                             formatTime: formatTime,
                             personName: speakerNames[segment.speaker],
-                            onSpeakerTapped: !segment.isUser ? { onSpeakerTapped?(segment) } : nil
+                            onSpeakerTapped: !segment.isUser ? { onSpeakerTapped?(segment) } : nil,
+                            highlighted: highlightedId == segment.id
                         )
+                        .id(segment.id)
                     }
 
                     // Stable bottom anchor that never changes ID
@@ -146,9 +219,53 @@ struct LiveTranscriptView: View {
             }
             .defaultScrollAnchor(.bottom)
             .onChange(of: scrollTrigger) { _, _ in
+                guard !followPaused else { return }
                 proxy.scrollTo("transcript-bottom", anchor: .bottom)
             }
+            .onChange(of: jumps.request) { _, request in
+                guard let request, let target = jumpTarget(for: request) else { return }
+                followPaused = true
+                withAnimation(.easeOut(duration: 0.25)) {
+                    proxy.scrollTo(target, anchor: .center)
+                }
+                highlightedId = target
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+                    if highlightedId == target { highlightedId = nil }
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if followPaused {
+                    Button {
+                        followPaused = false
+                        proxy.scrollTo("transcript-bottom", anchor: .bottom)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.down")
+                                .scaledFont(size: 11, weight: .bold)
+                            Text("Back to latest")
+                                .scaledFont(size: 12, weight: .semibold)
+                        }
+                        .foregroundColor(OmiColors.backgroundPrimary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .background(Capsule().fill(OmiColors.textPrimary))
+                        .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, 12)
+                }
+            }
         }
+    }
+
+    /// The row a jump should land on: the line itself, or — when it has already left the
+    /// in-memory window — the first line said at or after that moment. Nothing when that
+    /// moment is older than everything still loaded: landing on an unrelated line is worse
+    /// than staying put (the minutes show the words either way).
+    private func jumpTarget(for request: TranscriptJumpCenter.Request) -> String? {
+        if segments.contains(where: { $0.id == request.lineId }) { return request.lineId }
+        guard let first = segments.first, request.t >= first.start - 1 else { return nil }
+        return segments.first(where: { $0.start >= request.t - 1 })?.id
     }
 }
 
@@ -158,6 +275,8 @@ private struct LiveSegmentView: View {
     let formatTime: (Double) -> String
     var personName: String? = nil
     var onSpeakerTapped: (() -> Void)? = nil
+    /// Just jumped to from the minutes.
+    var highlighted: Bool = false
 
     @State private var isHovered = false
 
@@ -246,6 +365,11 @@ private struct LiveSegmentView: View {
                 .background(
                     RoundedRectangle(cornerRadius: 16)
                         .fill(bubbleColor)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(OmiColors.textPrimary.opacity(highlighted ? 0.8 : 0), lineWidth: 1.5)
+                        .animation(.easeOut(duration: 0.3), value: highlighted)
                 )
 
             // Translations from backend

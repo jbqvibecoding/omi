@@ -160,6 +160,25 @@ class PhotoDescribedEvent(MessageEvent):
         return j
 
 
+class ProactiveSuggestionEvent(MessageEvent):
+    """In-session copilot suggestion pushed to a live /v4/listen client (phone/glasses),
+    the same "live copilot" the desktop shows locally. Delivered on the owning WebSocket
+    while the session is active; the FCM mentor path remains the out-of-session fallback."""
+
+    event_type: str = "proactive_suggestion"
+    suggestion: str
+    headline: Optional[str] = None
+    category: Optional[str] = None
+    confidence: Optional[float] = None
+    scenario: Optional[str] = None
+
+    def to_json(self):
+        j = self.model_dump(mode="json")
+        j["type"] = self.event_type
+        del j["event_type"]
+        return j
+
+
 class SpeakerLabelSuggestionEvent(MessageEvent):
     event_type: str = "speaker_label_suggestion"
     speaker_id: int

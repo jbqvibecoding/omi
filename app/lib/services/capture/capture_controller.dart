@@ -115,6 +115,23 @@ class CaptureController extends ChangeNotifier
   List<MessageEvent> _transcriptionServiceStatuses = [];
   List<MessageEvent> get transcriptionServiceStatuses => _transcriptionServiceStatuses;
 
+  /// Live copilot suggestions pushed from the backend during the session
+  /// (phone/glasses parity with the desktop live copilot). Observed by the UI to
+  /// render suggestion cards; most-recent last.
+  final List<ProactiveSuggestionEvent> _copilotSuggestions = [];
+  List<ProactiveSuggestionEvent> get copilotSuggestions => List.unmodifiable(_copilotSuggestions);
+
+  void dismissCopilotSuggestion(ProactiveSuggestionEvent event) {
+    _copilotSuggestions.remove(event);
+    notifyListeners();
+  }
+
+  void clearCopilotSuggestions() {
+    if (_copilotSuggestions.isEmpty) return;
+    _copilotSuggestions.clear();
+    notifyListeners();
+  }
+
   // Phone mic WAL: buffer for splitting variable-sized PCM chunks into fixed-size frames
   bool _phoneMicWalActive = false;
 
@@ -1703,6 +1720,17 @@ class CaptureController extends ChangeNotifier
 
     if (event is SegmentsDeletedEvent) {
       _handleSegmentsDeletedEvent(event);
+      return;
+    }
+
+    if (event is ProactiveSuggestionEvent) {
+      // Keep a small rolling window of recent suggestions for the UI.
+      _copilotSuggestions.add(event);
+      const maxSuggestions = 5;
+      if (_copilotSuggestions.length > maxSuggestions) {
+        _copilotSuggestions.removeRange(0, _copilotSuggestions.length - maxSuggestions);
+      }
+      notifyListeners();
       return;
     }
 
