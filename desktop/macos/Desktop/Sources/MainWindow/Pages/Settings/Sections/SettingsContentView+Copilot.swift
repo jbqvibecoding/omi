@@ -1,5 +1,9 @@
 import SwiftUI
 
+#if compiler(>=6.2)
+  import Translation
+#endif
+
 /// Unified Copilot settings — one home for the proactive copilot across its modes
 /// (Snap hotkey, Live Copilot, Screen-Op) plus learning, scenarios, and stealth.
 extension SettingsContentView {
@@ -130,6 +134,10 @@ extension SettingsContentView {
 
             settingsCard(settingId: "copilot.minutes") {
                 CopilotMinutesRow()
+            }
+
+            settingsCard(settingId: "copilot.subtitles") {
+                CopilotSubtitlesRow()
             }
 
             settingsCard(settingId: "copilot.ambient") {
@@ -570,6 +578,145 @@ private struct CopilotTriggerPolicyRow: View {
         .onAppear { policy = CopilotSettings.shared.triggerPolicy }
     }
 }
+
+/// Live subtitles — what the other side says, translated, on a bar over everything.
+private struct CopilotSubtitlesRow: View {
+    @State private var enabled = false
+    @State private var language = CopilotSettings.followSystemLanguage
+    @State private var visibleInShares = false
+
+    private var shortcutLabel: String { ShortcutSettings.shared.subtitlesShortcut.displayLabel }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "captions.bubble").scaledFont(size: 16)
+                    .foregroundColor(OmiColors.textTertiary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Live subtitles").scaledFont(size: 16, weight: .semibold)
+                        .foregroundColor(OmiColors.textPrimary)
+                    Text(
+                        "A bar with what the other side says and its translation, over any app — "
+                            + "Zoom, Tencent Meeting, Feishu, a YouTube livestream. \(shortcutLabel) shows or hides it."
+                    )
+                    .scaledFont(size: 13).foregroundColor(OmiColors.textSecondary)
+                }
+                Spacer()
+                Toggle("", isOn: $enabled).toggleStyle(.switch).labelsHidden()
+                    .onChange(of: enabled) { _, value in
+                        guard value != CopilotSettings.shared.subtitlesEnabled else { return }
+                        CopilotSettings.shared.subtitlesEnabled = value
+                        SubtitleController.shared.settingChanged()
+                    }
+            }
+
+            if enabled {
+                HStack {
+                    Text("Translate into").scaledFont(size: 13)
+                        .foregroundColor(OmiColors.textSecondary)
+                    Spacer()
+                    Picker("", selection: $language) {
+                        Text("My language (\(MeetingLanguages.displayName(MeetingLanguages.myLanguage())))")
+                            .tag(CopilotSettings.followSystemLanguage)
+                        Divider()
+                        ForEach(MeetingLanguages.readable) { option in
+                            Text(option.name).tag(option.code)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 220)
+                    .onChange(of: language) { _, value in
+                        CopilotSettings.shared.subtitleLanguage = value
+                    }
+                }
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Show in screen shares and recordings").scaledFont(size: 13)
+                            .foregroundColor(OmiColors.textSecondary)
+                        Text("Off: you see the bar, the people you share your screen with don't.")
+                            .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $visibleInShares).toggleStyle(.switch).labelsHidden()
+                        .onChange(of: visibleInShares) { _, value in
+                            CopilotSettings.shared.subtitlesVisibleInScreenShare = value
+                            SubtitleOverlayController.shared.refresh()
+                        }
+                }
+                Text(recognizerNote)
+                    .scaledFont(size: 11).foregroundColor(OmiColors.textTertiary)
+                #if compiler(>=6.2)
+                    if #available(macOS 26.0, *) {
+                        OfflineTranslationRow()
+                    }
+                #endif
+            }
+        }
+        .onAppear {
+            enabled = CopilotSettings.shared.subtitlesEnabled
+            language = CopilotSettings.shared.subtitleLanguage
+            visibleInShares = CopilotSettings.shared.subtitlesVisibleInScreenShare
+        }
+    }
+
+    private var recognizerNote: String {
+        if TranscriberRouting.appleSpeechAvailable {
+            return "Words appear as they are said, recognized on this Mac in the language they speak. "
+                + "Shows while omi is recording, with system audio on."
+        }
+        return "Lines appear once each sentence is transcribed (a few seconds behind; live words need "
+            + "macOS 26). Shows while omi is recording, with system audio on."
+    }
+}
+
+#if compiler(>=6.2)
+    /// Whether this Mac can translate the likely language pair offline, and a way to get it.
+    /// Offline translation is what keeps subtitles free and fast: without it every finished line
+    /// costs a model call from a shared budget.
+    @available(macOS 26.0, *)
+    private struct OfflineTranslationRow: View {
+        @State private var status: LanguageAvailability.Status?
+        @State private var configuration: TranslationSession.Configuration?
+
+        private var target: String { MeetingLanguages.myLanguage() }
+        private var source: String { MeetingLanguages.followSystemTarget(source: target) }
+
+        private func language(_ code: String) -> Locale.Language {
+            Locale.Language(identifier: code == "zh-CN" ? "zh-Hans" : code == "zh-TW" ? "zh-Hant" : code)
+        }
+
+        var body: some View {
+            HStack {
+                Text("Offline translation, \(MeetingLanguages.displayName(source)) → \(MeetingLanguages.displayName(target))")
+                    .scaledFont(size: 13).foregroundColor(OmiColors.textSecondary)
+                Spacer()
+                switch status {
+                case .installed:
+                    Text("On this Mac").scaledFont(size: 12).foregroundColor(OmiColors.textTertiary)
+                case .supported:
+                    Button("Download") {
+                        configuration = TranslationSession.Configuration(
+                            source: language(source), target: language(target))
+                    }
+                case .unsupported:
+                    Text("Not available").scaledFont(size: 12).foregroundColor(OmiColors.textTertiary)
+                default:
+                    ProgressView().controlSize(.small)
+                }
+            }
+            .task { await check() }
+            .translationTask(configuration) { session in
+                // Shows the system's download prompt for the pair.
+                try? await session.prepareTranslation()
+                await check()
+            }
+        }
+
+        private func check() async {
+            status = await LanguageAvailability().status(from: language(source), to: language(target))
+        }
+    }
+#endif
 
 /// Live meeting minutes — summary, topics, fishbone diagrams, and conclusions and to-dos that
 /// each show the words they came from.

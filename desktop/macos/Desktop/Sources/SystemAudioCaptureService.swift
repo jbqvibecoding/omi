@@ -123,10 +123,29 @@ class SystemAudioCaptureService: @unchecked Sendable {
         }
     }
 
+    /// This process's Core Audio process object, for excluding it from the tap.
+    static func ownProcessObject() -> AudioObjectID? {
+        var pid = getpid()
+        var object = AudioObjectID(kAudioObjectUnknown)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyTranslatePIDToProcessObject,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        let status = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject), &address,
+            UInt32(MemoryLayout<pid_t>.size), &pid, &size, &object)
+        return status == noErr && object != kAudioObjectUnknown ? object : nil
+    }
+
     /// Performs all blocking CoreAudio HAL setup. Must be called on audioQueue, not the main thread.
     private func startCaptureOnQueue() throws {
-        // 1. Create tap description for all system audio
-        let tapDescription = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
+        // 1. Create tap description for all system audio — except omi's own. omi speaks: voice
+        // replies, and the interpreter's translations. Without this they come straight back in
+        // as "the other side" and get transcribed, minuted and subtitled. (Cicada's fix:
+        // github.com/wquguru/cicada, Apache-2.0, SystemAudioTap.ownProcessObject.)
+        let tapDescription = CATapDescription(
+            stereoGlobalTapButExcludeProcesses: Self.ownProcessObject().map { [$0] } ?? [])
         tapDescription.uuid = tapUUID
         tapDescription.name = "OMI System Audio Tap"
         tapDescription.muteBehavior = .unmuted  // Don't mute playback

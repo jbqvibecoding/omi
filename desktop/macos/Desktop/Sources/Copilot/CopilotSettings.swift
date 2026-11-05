@@ -30,6 +30,9 @@ class CopilotSettings {
     private let slideTimelineEnabledKey = "copilotSlideTimelineEnabled"
     private let minutesEnabledKey = "copilotMinutesEnabled"
     private let minutesLanguageKey = "copilotMinutesLanguage"
+    private let subtitlesEnabledKey = "copilotSubtitlesEnabled"
+    private let subtitleLanguageKey = "copilotSubtitleLanguage"
+    private let subtitlesVisibleInScreenShareKey = "copilotSubtitlesVisibleInScreenShare"
 
     /// `minutesLanguage` value: the reader's own language, from the system language list.
     static let followSystemLanguage = "mine"
@@ -66,6 +69,9 @@ class CopilotSettings {
             slideTimelineEnabledKey: false,
             minutesEnabledKey: true,
             minutesLanguageKey: Self.followSystemLanguage,
+            subtitlesEnabledKey: false,
+            subtitleLanguageKey: Self.followSystemLanguage,
+            subtitlesVisibleInScreenShareKey: false,
         ])
     }
 
@@ -289,6 +295,35 @@ class CopilotSettings {
         get { UserDefaults.standard.string(forKey: minutesLanguageKey) ?? Self.followSystemLanguage }
         set {
             UserDefaults.standard.set(newValue, forKey: minutesLanguageKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Whether a subtitle bar shows what the other side says, translated, while recording.
+    var subtitlesEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: subtitlesEnabledKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: subtitlesEnabledKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// What subtitles are translated into: `followSystemLanguage` (my language — or, when they
+    /// already speak it, the next language on the system list) or a translation code.
+    var subtitleLanguage: String {
+        get { UserDefaults.standard.string(forKey: subtitleLanguageKey) ?? Self.followSystemLanguage }
+        set {
+            UserDefaults.standard.set(newValue, forKey: subtitleLanguageKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Whether the subtitle bar appears in screen shares and recordings. Off by default: the
+    /// bar is for you, and the people on the call would otherwise read it on your shared screen.
+    var subtitlesVisibleInScreenShare: Bool {
+        get { UserDefaults.standard.bool(forKey: subtitlesVisibleInScreenShareKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: subtitlesVisibleInScreenShareKey)
             NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
         }
     }

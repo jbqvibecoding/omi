@@ -43,6 +43,8 @@
     <string>Omi needs camera access for watcher agents you create that observe your camera.</string>
     <key>NSAudioCaptureUsageDescription</key>
     <string>Omi needs permission to capture system audio for transcription of calls and meetings.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Omi uses on-device speech recognition for live subtitles and interpretation in your meetings.</string>
     <key>NSBluetoothAlwaysUsageDescription</key>
     <string>Omi needs Bluetooth access to connect to your Omi wearable device for audio capture and transcription.</string>
     <key>CFBundleURLTypes</key>

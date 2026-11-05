@@ -1,0 +1,3 @@
+{
+    "change": "Fixed Chinese, Japanese and Korean meetings coming out as nonsense with on-device transcription: they now use Apple's recognizer on macOS 26, or the cloud"
+}

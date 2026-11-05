@@ -17,6 +17,7 @@ class ShortcutSettings: ObservableObject {
     nonisolated static let suggestNowShortcutChanged = Notification.Name("ShortcutSettings.suggestNowShortcutChanged")
     nonisolated static let snapRegionShortcutChanged = Notification.Name("ShortcutSettings.snapRegionShortcutChanged")
     nonisolated static let quickReplyShortcutChanged = Notification.Name("ShortcutSettings.quickReplyShortcutChanged")
+    nonisolated static let subtitlesShortcutChanged = Notification.Name("ShortcutSettings.subtitlesShortcutChanged")
 
     /// Notification posted when stealth mode is toggled so windows can refresh content protection.
     nonisolated static let stealthModeChanged = Notification.Name("ShortcutSettings.stealthModeChanged")
@@ -322,6 +323,11 @@ class ShortcutSettings: ObservableObject {
         keyCode: 15, keyDisplay: "R", modifiers: [.control, .option])
     static let defaultQuickReplyShortcut = quickReplyShortcut
 
+    // Show / hide the subtitle bar. ⌃⌥S, Cicada's default, in the same ⌃⌥ family as Quick Reply.
+    static let subtitlesShortcut = KeyboardShortcut(
+        keyCode: 1, keyDisplay: "S", modifiers: [.control, .option])
+    static let defaultSubtitlesShortcut = subtitlesShortcut
+
     // Click-through toggle (default ⌘M, matching cheating-daddy/glass Cmd+M convention).
     static let clickThroughCommandMShortcut = KeyboardShortcut(keyCode: 46, keyDisplay: "M", modifiers: .command)
     static let defaultClickThroughShortcut = clickThroughCommandMShortcut
@@ -416,6 +422,21 @@ class ShortcutSettings: ObservableObject {
         didSet {
             UserDefaults.standard.set(quickReplyEnabled, forKey: "shortcut_quickReplyEnabled")
             NotificationCenter.default.post(name: Self.quickReplyShortcutChanged, object: nil)
+        }
+    }
+
+    /// Show or hide the live subtitle bar.
+    @Published var subtitlesShortcut: KeyboardShortcut {
+        didSet {
+            persistShortcut(subtitlesShortcut, forKey: Self.subtitlesShortcutDefaultsKey)
+            NotificationCenter.default.post(name: Self.subtitlesShortcutChanged, object: nil)
+        }
+    }
+
+    @Published var subtitlesShortcutEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(subtitlesShortcutEnabled, forKey: "shortcut_subtitlesEnabled")
+            NotificationCenter.default.post(name: Self.subtitlesShortcutChanged, object: nil)
         }
     }
 
@@ -680,6 +701,7 @@ class ShortcutSettings: ObservableObject {
             ShortcutBinding(id: "suggestNow", label: "Suggest now", shortcut: suggestNowShortcut, enabled: suggestNowEnabled),
             ShortcutBinding(id: "snapRegion", label: "Snap a region", shortcut: snapRegionShortcut, enabled: snapRegionEnabled),
             ShortcutBinding(id: "quickReply", label: "Quick reply", shortcut: quickReplyShortcut, enabled: quickReplyEnabled),
+            ShortcutBinding(id: "subtitles", label: "Subtitles", shortcut: subtitlesShortcut, enabled: subtitlesShortcutEnabled),
             ShortcutBinding(id: "ptt", label: "Push to talk", shortcut: pttShortcut, enabled: pttEnabled),
         ]
     }
@@ -753,6 +775,7 @@ class ShortcutSettings: ObservableObject {
     private static let suggestNowShortcutDefaultsKey = "shortcut_suggestNowKey"
     private static let snapRegionShortcutDefaultsKey = "shortcut_snapRegionKey"
     private static let quickReplyShortcutDefaultsKey = "shortcut_quickReplyKey"
+    private static let subtitlesShortcutDefaultsKey = "shortcut_subtitlesKey"
 
     private init() {
         self.pttShortcut = Self.loadShortcut(
@@ -790,6 +813,11 @@ class ShortcutSettings: ObservableObject {
             legacyMapper: { _ in nil }
         ) ?? Self.defaultQuickReplyShortcut
 
+        self.subtitlesShortcut = Self.loadShortcut(
+            forKey: Self.subtitlesShortcutDefaultsKey,
+            legacyMapper: { _ in nil }
+        ) ?? Self.defaultSubtitlesShortcut
+
         self.askOmiEnabled = UserDefaults.standard.object(forKey: "shortcut_askOmiEnabled") as? Bool ?? true
         self.copilotEnabled = UserDefaults.standard.object(forKey: "shortcut_copilotEnabled") as? Bool ?? true
         self.stealthModeEnabled = UserDefaults.standard.object(forKey: "shortcut_stealthModeEnabled") as? Bool ?? true
@@ -797,6 +825,7 @@ class ShortcutSettings: ObservableObject {
         self.suggestNowEnabled = UserDefaults.standard.object(forKey: "shortcut_suggestNowEnabled") as? Bool ?? true
         self.snapRegionEnabled = UserDefaults.standard.object(forKey: "shortcut_snapRegionEnabled") as? Bool ?? true
         self.quickReplyEnabled = UserDefaults.standard.object(forKey: "shortcut_quickReplyEnabled") as? Bool ?? true
+        self.subtitlesShortcutEnabled = UserDefaults.standard.object(forKey: "shortcut_subtitlesEnabled") as? Bool ?? true
         self.pttEnabled = UserDefaults.standard.object(forKey: "shortcut_pttEnabled") as? Bool ?? true
         self.doubleTapForLock = UserDefaults.standard.object(forKey: "shortcut_doubleTapForLock") as? Bool ?? true
         self.solidBackground = UserDefaults.standard.object(forKey: "shortcut_solidBackground") as? Bool ?? false

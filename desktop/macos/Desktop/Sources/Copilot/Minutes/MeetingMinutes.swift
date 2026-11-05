@@ -532,6 +532,27 @@ enum MinutesLogic {
         return Set(new.topics.flatMap { [$0.title] + $0.points.map(\.text) }).subtracting(before)
     }
 
+    /// A line with the minutes' misheard spellings replaced by the right ones, before it is
+    /// translated: a translator given "江松" can only translate "江松". Latin spellings match
+    /// whole words, ignoring case; CJK ones match anywhere (there are no word breaks).
+    static func correct(_ text: String, terms: [MinutesTerm]) -> String {
+        var out = text
+        for term in terms where !term.name.isEmpty {
+            for heard in term.heard where heard.count >= 2 && heard != term.name {
+                let cjk = heard.unicodeScalars.contains { $0.properties.isIdeographic }
+                if cjk {
+                    out = out.replacingOccurrences(of: heard, with: term.name)
+                } else {
+                    let pattern = "(?<![\\p{L}\\p{N}])" + NSRegularExpression.escapedPattern(for: heard) + "(?![\\p{L}\\p{N}])"
+                    out = out.replacingOccurrences(
+                        of: pattern, with: NSRegularExpression.escapedTemplate(for: term.name),
+                        options: [.regularExpression, .caseInsensitive])
+                }
+            }
+        }
+        return out
+    }
+
     /// Names for a translation glossary: "江充 (heard as 江松, 江冲)".
     static func glossary(_ terms: [MinutesTerm]) -> [String] {
         terms.prefix(30).map { t in

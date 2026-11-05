@@ -30,6 +30,7 @@ class GlobalShortcutManager {
         case suggestNow = 5
         case snapRegion = 6
         case quickReply = 7
+        case subtitles = 8
 
         /// Matches `ShortcutSettings.ShortcutBinding.id`, so the settings page can line a failure
         /// up with the row it belongs to.
@@ -41,6 +42,7 @@ class GlobalShortcutManager {
             case .suggestNow: return "suggestNow"
             case .snapRegion: return "snapRegion"
             case .quickReply: return "quickReply"
+            case .subtitles: return "subtitles"
             }
         }
     }
@@ -51,6 +53,7 @@ class GlobalShortcutManager {
     private var suggestNowShortcutObserver: NSObjectProtocol?
     private var snapRegionShortcutObserver: NSObjectProtocol?
     private var quickReplyShortcutObserver: NSObjectProtocol?
+    private var subtitlesShortcutObserver: NSObjectProtocol?
 
     private init() {
         var eventType = EventTypeSpec(
@@ -101,6 +104,15 @@ class GlobalShortcutManager {
             self?.registerQuickReply()
         }
 
+        // Re-register the subtitles shortcut when user changes it in settings
+        subtitlesShortcutObserver = NotificationCenter.default.addObserver(
+            forName: ShortcutSettings.subtitlesShortcutChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.registerSubtitles()
+        }
+
         // Re-register the suggest-now shortcut when user changes it in settings
         suggestNowShortcutObserver = NotificationCenter.default.addObserver(
             forName: ShortcutSettings.suggestNowShortcutChanged,
@@ -135,6 +147,8 @@ class GlobalShortcutManager {
         registerSnapRegion()
         // Register the quick-reply shortcut from user settings
         registerQuickReply()
+        // Register the show/hide-subtitles shortcut from user settings
+        registerSubtitles()
     }
 
     func setRegistrationSuspended(_ suspended: Bool) {
@@ -226,6 +240,26 @@ class GlobalShortcutManager {
         }
         registerHotKey(keyCode: Int(keyCode), modifiers: shortcut.carbonModifiers, id: .quickReply)
         NSLog("GlobalShortcutManager: Registered quick-reply shortcut: \(shortcut.displayLabel)")
+    }
+
+    private func registerSubtitles() {
+        guard !isRegistrationSuspended else { return }
+        if let ref = hotKeyRefs.removeValue(forKey: .subtitles) {
+            UnregisterEventHotKey(ref)
+        }
+        let (enabled, shortcut) = MainActor.assumeIsolated {
+            (ShortcutSettings.shared.subtitlesShortcutEnabled, ShortcutSettings.shared.subtitlesShortcut)
+        }
+        guard enabled else {
+            NSLog("GlobalShortcutManager: Subtitles shortcut is disabled")
+            return
+        }
+        guard shortcut.supportsGlobalHotKey, let keyCode = shortcut.keyCode else {
+            NSLog("GlobalShortcutManager: Subtitles shortcut is not a registerable hotkey")
+            return
+        }
+        registerHotKey(keyCode: Int(keyCode), modifiers: shortcut.carbonModifiers, id: .subtitles)
+        NSLog("GlobalShortcutManager: Registered subtitles shortcut: \(shortcut.displayLabel)")
     }
 
     private func registerSuggestNow() {
@@ -346,6 +380,13 @@ class GlobalShortcutManager {
             DispatchQueue.main.async {
                 Task { @MainActor in
                     await QuickReplyOrchestrator.shared.trigger(source: "hotkey")
+                }
+            }
+        case .subtitles:
+            NSLog("GlobalShortcutManager: Subtitles shortcut detected")
+            DispatchQueue.main.async {
+                Task { @MainActor in
+                    SubtitleOverlayController.shared.toggleManual()
                 }
             }
         case .suggestNow:

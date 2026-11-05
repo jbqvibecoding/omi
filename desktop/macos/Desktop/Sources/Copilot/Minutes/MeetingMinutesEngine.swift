@@ -433,10 +433,26 @@ final class MeetingMinutesEngine: ObservableObject {
         let client = try cachedClient()
         let startedAt = snapshot.first(where: { !$0.deleted })?.t ?? 0
         for attempt in 1...(retryLanguage ? 2 : 1) {
-            let raw = try await client.sendTextRequest(
-                prompt: MinutesLogic.instruction(language: language), systemPrompt: system,
-                maxRetries: final ? 1 : 0, timeout: final ? 150 : 75, thinkingBudget: 0,
-                jsonOutput: true)
+            // The meeting features share one budget (subtitles and the interpreter come first).
+            // A live update that doesn't fit waits for the next one; the final pass waits its turn.
+            var admitted = await GeminiCallGate.shared.acquire(.minutes)
+            var waited = 0
+            while !admitted, final, waited < 12 {
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                waited += 1
+                admitted = await GeminiCallGate.shared.acquire(.minutes)
+            }
+            guard admitted else { throw BudgetFull() }
+            let raw: String
+            do {
+                raw = try await client.sendTextRequest(
+                    prompt: MinutesLogic.instruction(language: language), systemPrompt: system,
+                    maxRetries: final ? 1 : 0, timeout: final ? 150 : 75, thinkingBudget: 0,
+                    jsonOutput: true)
+            } catch {
+                if GeminiCallGate.isRateLimit(error) { await GeminiCallGate.shared.noteRateLimited() }
+                throw error
+            }
             guard
                 let parsed = MinutesLogic.parse(
                     raw, lines: snapshot, startedAt: startedAt, who: { labels.who($0, names: names) })
@@ -446,6 +462,9 @@ final class MeetingMinutesEngine: ObservableObject {
         }
         return nil
     }
+
+    /// The shared meeting budget had no room for a minutes call.
+    private struct BudgetFull: Error {}
 
     private func cachedClient() throws -> GeminiClient {
         if let geminiClient { return geminiClient }
@@ -466,6 +485,7 @@ final class MeetingMinutesEngine: ObservableObject {
     }
 
     private static func state(for error: Error) -> State {
+        if error is BudgetFull { return .rateLimited }
         let message = ((error as? GeminiClient.GeminiClientError)?.internalMessage ?? error.localizedDescription)
             .lowercased()
         if (error as? GeminiClient.GeminiClientError)?.isExpectedProductState == true { return .unavailable }

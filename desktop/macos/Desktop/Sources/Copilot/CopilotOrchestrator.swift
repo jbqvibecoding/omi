@@ -388,6 +388,27 @@ final class CopilotOrchestrator {
         }
 
         DesktopAutomationActionRegistry.shared.register(
+            name: "subtitles_dump",
+            summary: "Show the live subtitles: lines seen, translated and waiting, the line in "
+                + "progress, the target language, the bar's state, and the shared model budget."
+        ) { _ in
+            var out = await MainActor.run { SubtitleController.shared.debugDump() }
+            for (key, value) in await GeminiCallGate.shared.debugDump() { out["budget_" + key] = value }
+            out["apple_speech"] = TranscriberRouting.appleSpeechAvailable ? "true" : "false"
+            return out
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
+            name: "subtitles_say",
+            summary: "Put a line on the subtitle bar as if the other side said it, translated the "
+                + "way a real one would be. text=<the line>.",
+            params: ["text"]
+        ) { params in
+            guard let text = params["text"], !text.isEmpty else { return ["error": "pass text=<line>"] }
+            return await MainActor.run { SubtitleController.shared.debugSay(text) }
+        }
+
+        DesktopAutomationActionRegistry.shared.register(
             name: "minutes_replay",
             summary: "Rebuild a finished session's minutes from its saved transcript, a few "
                 + "lines at a time and then the final pass, to check topics stay stable. "
